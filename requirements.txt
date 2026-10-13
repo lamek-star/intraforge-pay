@@ -1,0 +1,9 @@
+# Exact versions verified for this pilot (Python 3.12). Run `pip-audit -r requirements.txt` before each pilot release.
+fastapi==0.143.0
+uvicorn==0.54.0
+psycopg[binary,pool]==3.3.6
+psycopg-pool==3.3.3
+httpx==0.28.1
+segno==1.6.6
+cryptography==50.0.2
+pytest==9.1.1

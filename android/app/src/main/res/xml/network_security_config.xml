@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- No plain HTTP anywhere. Shop servers use their own certificate authority; the app trusts a shop's CA only
+         through the pin in that shop's connect QR (PinnedTrustManager), never by installing it system-wide. -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

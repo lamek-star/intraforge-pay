@@ -1,0 +1,78 @@
+# IntraForge sandbox for the IntraForge Pay pilot -- DEVELOPMENT AND DEMONSTRATION ONLY.
+#
+# A separate, throw-away IntraForge installation with its own project name, its own volumes and its own port, so the
+# pilot never touches an existing IntraForge installation or its data. It runs the released shop-kit images that match
+# the IntraForge repository's HEAD (1.2.0-6fc50c752); nothing is built or pulled (pull_policy: never).
+#
+# Only the proxy is published, on the loopback address only (https://localhost:9443).
+name: ifpay-intraforge-sandbox
+
+x-backend: &backend
+  image: intraforge-shop-backend:${INTRAFORGE_TAG:-1.2.0-6fc50c752}
+  pull_policy: never
+  restart: unless-stopped
+  env_file: .env
+  networks: [isolated]
+
+services:
+  postgres-control:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    networks: [isolated]
+    volumes: [control:/var/lib/postgresql]
+  postgres-tenant:
+    image: postgres:18
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    networks: [isolated]
+    volumes: [tenant:/var/lib/postgresql]
+  valkey:
+    image: valkey/valkey:9-alpine
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  object-storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    pull_policy: never
+    restart: unless-stopped
+    command: server /data
+    env_file: .env
+    networks: [isolated]
+    volumes: [objects:/data]
+  backend:
+    <<: *backend
+  worker:
+    <<: *backend
+    command: celery -A config worker -l info --concurrency=2
+  frontend:
+    image: intraforge-shop-frontend:${INTRAFORGE_TAG:-1.2.0-6fc50c752}
+    pull_policy: never
+    restart: unless-stopped
+    networks: [isolated]
+  proxy:
+    image: caddy:2-alpine
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9443:443"
+    environment:
+      PROXY_TLS_HOSTNAMES: "localhost 127.0.0.1"
+      PROXY_DEFAULT_SNI: "localhost"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    networks: [isolated, edge]
+
+networks:
+  isolated:
+    internal: true
+  edge: {}
+
+volumes:
+  control: {}
+  tenant: {}
+  objects: {}
+  certificates: {}

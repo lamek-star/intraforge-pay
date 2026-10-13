@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pilot Shop Checkout</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/common.js" defer></script>
+  <script src="/static/shop.js" defer></script>
+</head>
+<body>
+  <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+  <header class="top">
+    <span class="brand" id="shop-name">Shop</span>
+    <span class="who"><span id="who"></span><button id="logout" class="ghost-light">Sign out</button></span>
+  </header>
+  <main class="narrow">
+    <section class="card" aria-labelledby="new-sale">
+      <h2 id="new-sale">New sale</h2>
+      <form id="amount-form">
+        <label for="amount">Amount (IF Credits, simulated)</label>
+        <input id="amount" inputmode="decimal" autocomplete="off" placeholder="25.00" required pattern="^\d{1,7}(\.\d{1,2})?$">
+        <button class="big mt" type="submit" id="generate">Generate QR</button>
+      </form>
+      <div id="shop-msg" class="msg hidden" role="alert"></div>
+      <p class="small muted" id="verified-line"></p>
+    </section>
+
+    <section class="card hidden" id="qr-card" aria-live="polite">
+      <h2>Show this to the customer</h2>
+      <div class="qr-box">
+        <img id="qr-img" alt="Payment QR code">
+        <div class="confirm-amount" id="qr-amount"></div>
+        <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+      </div>
+      <p class="mt"><strong>Payment status:</strong> <span id="qr-status" class="badge">waiting</span>
+        <span class="small muted" id="qr-expiry"></span></p>
+      <details class="small">
+        <summary>Payment code (for typing or pasting instead of scanning)</summary>
+        <p class="mono" id="qr-code"></p>
+        <button class="secondary" id="copy-code" type="button">Copy code</button>
+      </details>
+      <div class="row mt">
+        <button class="secondary" id="cancel-qr" type="button">Cancel</button>
+        <button class="hidden" id="view-receipt" type="button">View receipt</button>
+        <button class="secondary hidden" id="new-qr" type="button">New sale</button>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="totals">
+      <h2 id="totals">Simulated sales</h2>
+      <div class="grid2">
+        <div><div class="muted small">Total simulated sales (merchant payable)</div><div class="stat" id="total-sales">–</div></div>
+        <div><div class="muted small">Today</div><div class="stat" id="today-total">–</div></div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="today-h">
+      <h2 id="today-h">Today's transactions</h2>
+      <ul class="list" id="today-list"></ul>
+      <p class="small muted hidden" id="today-empty">No transactions yet today.</p>
+    </section>
+    <section class="card" aria-labelledby="app-h">
+      <h2 id="app-h">Customer app</h2>
+      <p class="small muted">Customers with the IF Credits Wallet app scan this once to add this shop. The app then shows
+        the shop by name and only trusts this shop PC.</p>
+      <button class="secondary" id="pair-btn" type="button">Show connect QR</button>
+      <div id="pair-box" class="qr-box hidden mt">
+        <img id="pair-img" alt="Connect QR for the customer app">
+        <p><strong id="pair-shop"></strong></p>
+        <details class="small"><summary>Connect code (to paste instead of scanning)</summary>
+          <p class="mono" id="pair-code"></p></details>
+      </div>
+      <div id="pair-msg" class="msg hidden" role="alert"></div>
+    </section>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · Pilot only: no cash, banking, top-ups or payouts.</p>
+  </main>
+  <input type="file" id="doc-input" class="hidden" accept="application/pdf,image/png,image/jpeg,text/plain">
+</body>
+</html>

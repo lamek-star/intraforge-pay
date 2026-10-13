@@ -1,0 +1,97 @@
+"""Customer wallet API, and the shared receipt endpoint (object-level authorization in receipts.get_receipt)."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from pydantic import BaseModel, Field
+
+from .. import audit, checkout, db, ledger, receipts
+from ..config import SIMULATED_NOTICE
+from ..errors import DomainError
+from ..money import format_amount
+from .api_shop import receipt_payload, upload_receipt_in_background
+from .deps import current_principal, require
+
+router = APIRouter(prefix="/api")
+
+
+class CodeBody(BaseModel):
+    code: str = Field(max_length=200)
+
+
+class PayBody(BaseModel):
+    code: str = Field(max_length=200)
+    expected_amount_minor: int
+    confirm: bool
+
+
+@router.get("/wallet")
+def wallet(user: dict = Depends(require("wallet.read"))):
+    with db.connection() as conn:
+        account = ledger.customer_account(conn, user["id"])
+        balance = ledger.balance_minor(conn, account["id"])
+        history = conn.execute(
+            """SELECT t.kind, t.reference, t.created_at, e.side, e.amount_minor,
+                      r.receipt_number, m.name AS merchant_name
+               FROM journal_entries e
+               JOIN journal_transactions t ON t.id = e.transaction_id
+               LEFT JOIN receipts r ON r.journal_transaction_id = t.id
+               LEFT JOIN merchants m ON m.id = r.merchant_id
+               WHERE e.account_id = %s
+               ORDER BY t.seq DESC LIMIT 100""",
+            (account["id"],),
+        ).fetchall()
+    return {
+        "notice": SIMULATED_NOTICE,
+        "customer": user["display_name"],
+        "balance": format_amount(balance),
+        "balance_minor": balance,
+        "history": [
+            {
+                "kind": h["kind"],
+                "description": (f"Purchase at {h['merchant_name']}" if h["kind"] == "purchase"
+                                else "Simulated credit allocation (approved)"),
+                "amount": ("-" if h["side"] == "debit" else "+") + format_amount(h["amount_minor"]),
+                "at": h["created_at"].isoformat(),
+                "receipt_number": h["receipt_number"],
+            }
+            for h in history
+        ],
+    }
+
+
+@router.post("/wallet/checkout/resolve")
+def resolve(body: CodeBody, user: dict = Depends(require("wallet.pay"))):
+    with db.connection() as conn:
+        return {**checkout.resolve(conn, actor=user, code=body.code), "notice": SIMULATED_NOTICE}
+
+
+@router.post("/wallet/checkout/pay")
+def pay(body: PayBody, background: BackgroundTasks, user: dict = Depends(require("wallet.pay"))):
+    if body.confirm is not True:
+        raise DomainError("not_confirmed", "Confirm the payment first.")
+    try:
+        with db.connection() as conn:
+            receipt, newly_paid = checkout.pay(conn, actor=user, code=body.code,
+                                               expected_amount_minor=body.expected_amount_minor)
+            payload = receipt_payload(conn, receipt)
+            balance = ledger.balance_minor(conn, ledger.customer_account(conn, user["id"])["id"])
+    except checkout.PaymentRefused as exc:
+        # The payment transaction has been rolled back; the refusal is recorded on its own.
+        with db.connection() as conn:
+            audit.record(conn, actor=user, action="payment.refused", result="denied", subject_type="payment_code",
+                         subject_id=body.code.split(".")[1] if body.code.count(".") == 2 else "",
+                         detail={"code": exc.code, "message": exc.message})
+        raise
+    if newly_paid:
+        upload_receipt_in_background(background, user, receipt["receipt_number"])
+    return {"status": "paid" if newly_paid else "already_paid", "receipt": payload,
+            "balance": format_amount(balance), "notice": SIMULATED_NOTICE}
+
+
+@router.get("/receipts/{number}")
+def get_receipt(number: str, request: Request):
+    principal = current_principal(request)
+    with db.connection() as conn:
+        receipt = receipts.get_receipt(conn, actor=principal.user, number=number)
+        return receipt_payload(conn, receipt)

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+secrets/
+config/intraforge.json
+intraforge-sandbox/.env
+intraforge-sandbox/.sandbox-admin.json
+intraforge-sandbox/caddy-root.crt
+dist/

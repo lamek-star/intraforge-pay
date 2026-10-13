@@ -1,0 +1,46 @@
+# HawkScan (StackHawk DAST) configuration for the IntraForge Pay pilot shop server.
+#
+# Scan the ISOLATED scan instance, never the demo: it has its own database (ifpay_scan) and secrets (secrets/scan),
+# because a scan sends thousands of junk requests and the pilot's audit log is permanent by design.
+#   see docs/MANUAL.md section 13 for how to start it and run the scan.
+#
+# Assumptions recorded for the scan:
+#   - Surface: one REST JSON API + 4 static pages, all on the same origin; the OpenAPI spec is exported from the app
+#     (stackhawk-openapi.json, regenerate with scripts/export_openapi.py).
+#   - Auth: session cookie + CSRF header issued by POST /api/auth/login (see scripts/run_hawkscan.py);
+#     scanned as a CUSTOMER (non-privileged).
+#     Shop/admin endpoints are still requested and must answer 403.
+#   - /api/auth/logout is excluded: it would end the scan's own session.
+app:
+  applicationId: ${APP_ID:95f1221b-ac7b-4bae-96c1-a31bb405844a}
+  env: ${APP_ENV:Development}
+  host: ${APP_HOST:https://localhost:8644}
+  openApiConf:
+    filePath: stackhawk-openapi.json
+  excludePaths:
+    - "/api/auth/logout"
+  authentication:
+    # scripts/run_hawkscan.py signs in to the scan instance as a test CUSTOMER first and passes the session cookie and
+    # CSRF token in IFPAY_SCAN_SESSION / IFPAY_SCAN_CSRF; HawkScan sends both on every request. (An 8-hour session
+    # outlasts a scan; /api/auth/logout is excluded so the scan cannot end its own session.)
+    external:
+      values:
+        - type: COOKIE
+          value:
+            name: ifpay_session
+            val: ${IFPAY_SCAN_SESSION}
+        - type: TOKEN
+          value:
+            name: X-CSRF-Token
+            val: ${IFPAY_SCAN_CSRF}
+    testPath:
+      path: /api/wallet
+      success: ".*200.*"
+
+tags:
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: _STACKHAWK_GIT_COMMIT_SHA
+    value: ${COMMIT_SHA:none}
+  - name: _STACKHAWK_GIT_BRANCH
+    value: ${BRANCH_NAME:none}

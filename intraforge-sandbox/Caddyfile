@@ -1,0 +1,70 @@
+# Private Data Cloud — reverse proxy (Phase 1)
+#
+# TLS: `tls internal` uses Caddy's own local CA to issue a certificate for
+# the hostname(s) listed below — appropriate for a local/LAN-first
+# deployment per docs/deployment/LOCAL_DEPLOYMENT.md Section 6. Trust
+# Caddy's local CA root on client machines, or replace this directive with
+# a real internal-CA/ACME config for Phase 10 (internet gateway).
+#
+# The site address MUST name specific hostnames — a bare `:443` catch-all
+# gives `tls internal` nothing to eagerly issue a certificate for, and every
+# connection fails the TLS handshake with an `internal_error` alert (this
+# was confirmed by actually running the stack; see
+# docs/architecture/DEPENDENCY_VERSIONS.md). Add your LAN IP/hostname to
+# PROXY_TLS_HOSTNAMES in .env (space-separated — Caddy site addresses use
+# spaces, not commas) if accessing from another machine — the default only
+# covers same-machine access.
+#
+# Routing: API and infrastructure endpoints go to the Django backend;
+# everything else goes to the Next.js frontend. Only this proxy is
+# published to the host (docker-compose.yml) — backend/frontend/postgres/
+# valkey/object-storage stay on the internal Docker network
+# (docs/architecture/ARCHITECTURE.md Section 4).
+
+{
+	admin off
+	# A browser that opens IntraForge by IP address sends no server name (SNI); without a default the
+	# TLS handshake fails before any page loads. The shop kit sets this to the shop PC's address when
+	# other PCs in the shop may connect; otherwise it stays "localhost".
+	default_sni {$PROXY_DEFAULT_SNI:localhost}
+}
+
+{$PROXY_TLS_HOSTNAMES:localhost 127.0.0.1} {
+	tls internal
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+	}
+
+	# The internal service-application API (ADR-0018) is for containers on the internal network
+	# only; from outside it simply does not exist.
+	@internal path /api/v1/internal /api/v1/internal/*
+	handle @internal {
+		respond 404
+	}
+
+	@backend path /api/* /healthz /readyz /oauth/* /.well-known/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Service applications are served on IntraForge's own origin, under their launch path, so the
+	# IntraForge login carries over (ADR-0018). The application never receives IntraForge's own
+	# session or CSRF cookie: it authenticates the path-scoped application session instead. Where
+	# the service is not deployed this answers 502.
+	@spareparts path /apps/spare-parts /apps/spare-parts/*
+	handle @spareparts {
+		reverse_proxy spareparts:3000 {
+			header_up Cookie "(^|;\s*)(sessionid|csrftoken)=[^;]*" ""
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

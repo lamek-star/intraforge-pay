@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IF Credits Wallet</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/jsQR.js" defer></script>
+  <script src="/static/common.js" defer></script>
+  <script src="/static/wallet.js" defer></script>
+</head>
+<body>
+  <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+  <header class="top">
+    <span class="brand">IF Credits Wallet</span>
+    <span class="who"><span id="who"></span><button id="logout" class="ghost-light">Sign out</button></span>
+  </header>
+  <main class="narrow">
+    <section class="card" aria-labelledby="bal-h">
+      <div class="muted small" id="bal-h"><span id="customer-name"></span> · available</div>
+      <div class="stat" id="balance">–</div>
+      <div class="small muted">IF Credits — simulated value, no cash value</div>
+      <button class="big mt" id="scan-btn" type="button">Scan QR</button>
+    </section>
+
+    <section class="card hidden" id="scan-card" aria-labelledby="scan-h">
+      <h2 id="scan-h">Scan the shop's QR code</h2>
+      <video id="video" class="hidden" playsinline muted></video>
+      <canvas id="canvas" class="hidden"></canvas>
+      <div class="row mt">
+        <button class="secondary" id="camera-btn" type="button">Use camera</button>
+        <label class="hidden" for="photo-input">Photo of the QR</label>
+        <button class="secondary" id="photo-btn" type="button">Take or choose a photo</button>
+      </div>
+      <input id="photo-input" type="file" accept="image/*" capture="environment" class="hidden">
+      <label for="code-input">…or paste the payment code</label>
+      <div class="row">
+        <input id="code-input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="IFPAY1.…">
+        <button id="code-btn" type="button">Continue</button>
+      </div>
+      <div id="scan-msg" class="msg hidden" role="alert"></div>
+      <button class="secondary mt" id="scan-close" type="button">Close</button>
+    </section>
+
+    <section class="card hidden" id="confirm-card" aria-labelledby="confirm-h" aria-live="polite">
+      <h2 id="confirm-h">Confirm purchase</h2>
+      <p class="muted small">Paying</p>
+      <p><strong id="merchant-name"></strong> <span id="merchant-verified" class="badge"></span></p>
+      <div class="confirm-amount" id="confirm-amount"></div>
+      <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+      <p class="small muted" id="confirm-expiry"></p>
+      <div id="confirm-msg" class="msg hidden" role="alert"></div>
+      <button class="big mt" id="pay-btn" type="button">Pay</button>
+      <button class="secondary mt" id="confirm-cancel" type="button">Don't pay</button>
+    </section>
+
+    <section class="card" aria-labelledby="hist-h">
+      <h2 id="hist-h">Transaction history</h2>
+      <ul class="list" id="history"></ul>
+      <p class="small muted hidden" id="history-empty">No transactions yet.</p>
+    </section>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · Pilot only: no cash, banking, top-ups or payouts.</p>
+  </main>
+</body>
+</html>

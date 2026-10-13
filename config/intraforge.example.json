@@ -1,0 +1,11 @@
+{
+  "format": "ifpay-intraforge-config/1",
+  "base_url": "https://localhost:9443",
+  "organization_id": "00000000-0000-0000-0000-000000000000",
+  "application_id": "00000000-0000-0000-0000-000000000000",
+  "application_name": "Pilot Shop",
+  "project_id": "00000000-0000-0000-0000-000000000000",
+  "bucket_id": "00000000-0000-0000-0000-000000000000",
+  "bucket_name": "Pilot Shop Receipts",
+  "ca_bundle": "C:\path\to\caddy-root.crt"
+}

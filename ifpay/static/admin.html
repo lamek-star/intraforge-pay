@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IntraForge Pay Admin</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/common.js" defer></script>
+  <script src="/static/admin.js" defer></script>
+</head>
+<body>
+  <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+  <header class="top">
+    <span class="brand">IntraForge Pay · Pilot administration</span>
+    <span class="who"><span id="who"></span><button id="logout" class="ghost-light">Sign out</button></span>
+  </header>
+  <main>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" data-tab="credits">Credits (maker/checker)</button>
+      <button role="tab" data-tab="customers" data-cap="users">Customers</button>
+      <button role="tab" data-tab="transactions">Transactions</button>
+      <button role="tab" data-tab="audit">Audit log</button>
+      <button role="tab" data-tab="integration">IntraForge connection</button>
+      <button role="tab" data-tab="users" data-cap="users">Users</button>
+    </nav>
+    <div id="page-msg" class="msg hidden" role="alert"></div>
+
+    <section data-panel="overview">
+      <div class="grid2">
+        <div class="card"><div class="muted small">Simulated credits issued</div><div class="stat" id="ov-issued">–</div></div>
+        <div class="card"><div class="muted small">Held by customers</div><div class="stat" id="ov-customers">–</div></div>
+        <div class="card"><div class="muted small">Owed to the shop (payable)</div><div class="stat" id="ov-merchant">–</div></div>
+        <div class="card"><div class="muted small">Ledger conservation</div><div class="stat" id="ov-ok">–</div>
+          <div class="small muted" id="ov-detail"></div></div>
+      </div>
+      <div class="card"><h2>Ledger accounts</h2><div class="table-wrap"><table>
+        <thead><tr><th>Account</th><th class="hide-sm">Kind</th><th class="num">Debits</th><th class="num">Credits</th><th class="num">Balance</th></tr></thead>
+        <tbody id="ov-accounts"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="credits" class="hidden">
+      <div class="card">
+        <h2>Request an allocation (maker)</h2>
+        <form id="alloc-form" class="row">
+          <div><label for="alloc-customer">Customer</label><select id="alloc-customer" required></select></div>
+          <div><label for="alloc-amount">Amount</label><input id="alloc-amount" value="100" inputmode="decimal" required></div>
+          <div><label for="alloc-reason">Reason</label><input id="alloc-reason" value="Pilot opening allocation" maxlength="200"></div>
+          <button type="submit" class="mt">Request</button>
+        </form>
+        <button type="button" class="secondary mt" id="alloc-all">Request 100 for every customer without credits</button>
+        <p class="small muted">A different person (the checker) must approve each request before any credit moves. You cannot approve your own request.</p>
+      </div>
+      <div class="card"><h2>Allocation requests</h2><div class="table-wrap"><table>
+        <thead><tr><th>Customer</th><th class="num">Amount</th><th>Status</th><th class="hide-sm">Maker → checker</th><th></th></tr></thead>
+        <tbody id="alloc-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="customers" class="hidden">
+      <div class="card">
+        <h2>Create a test customer</h2>
+        <form id="cust-form" class="row">
+          <div><label for="cust-username">Username</label><input id="cust-username" required pattern="[a-z0-9._\-]{3,40}" autocapitalize="none"></div>
+          <div><label for="cust-name">Display name</label><input id="cust-name" required maxlength="80"></div>
+          <div><label for="cust-password">Password (10+ characters)</label><input id="cust-password" type="password" minlength="10" required autocomplete="new-password"></div>
+          <button type="submit" class="mt">Create</button>
+        </form>
+      </div>
+      <div class="card"><h2>Customers</h2><div class="table-wrap"><table>
+        <thead><tr><th>Username</th><th>Name</th><th class="num">Balance</th><th>Status</th></tr></thead>
+        <tbody id="cust-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="transactions" class="hidden">
+      <div class="card"><h2>Journal transactions</h2><div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>When</th><th>Kind</th><th>Entries</th><th>Receipt</th></tr></thead>
+        <tbody id="tx-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="audit" class="hidden">
+      <div class="card"><h2>Audit log (append-only)</h2>
+        <div class="row"><label class="hidden" for="audit-filter">Action</label>
+          <select id="audit-filter"><option value="">All actions</option>
+            <option>payment.confirm</option><option>payment.refused</option><option>checkout.create</option>
+            <option>allocation.request</option><option>allocation.approve</option><option>allocation.reject</option>
+            <option>intraforge.receipt.upload</option><option>intraforge.supporting_document.upload</option>
+            <option>intraforge.verify</option><option>access.denied</option><option>auth.login</option></select>
+          <button class="secondary" id="audit-refresh" type="button">Refresh</button></div>
+        <div class="table-wrap mt"><table>
+          <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Result</th><th>Subject / detail</th></tr></thead>
+          <tbody id="audit-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="integration" class="hidden">
+      <div class="card">
+        <h2>Status</h2>
+        <p>Connection: <span id="if-status" class="badge">–</span> <span class="small muted" id="if-checked"></span></p>
+        <p class="small" id="if-detail"></p>
+        <p class="small">Credential file on this server: <span id="if-cred" class="badge">–</span></p>
+        <button id="if-verify" type="button" data-cap="integration">Verify with IntraForge now</button>
+      </div>
+      <div class="card" data-cap="integration">
+        <h2>Configuration wizard (non-secret)</h2>
+        <p class="small muted">Load <span class="mono">config/intraforge.json</span> written by
+          <span class="mono">scripts/intraforge_admin_setup.py</span>, or edit the fields. The application credential is
+          <strong>never</strong> entered here: it stays in <span class="mono">secrets/intraforge_credential</span> on the shop server.</p>
+        <label for="if-file">Configuration file</label>
+        <input id="if-file" type="file" accept="application/json,.json">
+        <label for="if-json">Configuration (JSON)</label>
+        <textarea id="if-json" spellcheck="false"></textarea>
+        <button id="if-save" type="button" class="mt">Save and verify</button>
+      </div>
+    </section>
+
+    <section data-panel="users" class="hidden">
+      <div class="card"><h2>All pilot users</h2><div class="table-wrap"><table>
+        <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <tbody id="user-list"></tbody></table></div></div>
+    </section>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · No real money, banking, top-ups or payouts.</p>
+  </main>
+</body>
+</html>

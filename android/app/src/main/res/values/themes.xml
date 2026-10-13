@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.IFPay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#172554</item>
+        <item name="android:navigationBarColor">#172554</item>
+        <item name="android:windowBackground">#0B0E24</item>
+    </style>
+</resources>

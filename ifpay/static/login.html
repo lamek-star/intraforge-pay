@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IntraForge Pay Pilot</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/common.js" defer></script>
+  <script src="/static/login.js" defer></script>
+</head>
+<body>
+  <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
+  <header class="top"><span class="brand">IntraForge Pay · Pilot</span></header>
+  <main class="narrow">
+    <h1>Sign in</h1>
+    <form id="login-form" class="card" autocomplete="on">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" autocapitalize="none" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <div id="login-msg" class="msg hidden" role="alert"></div>
+      <button class="big mt" type="submit">Sign in</button>
+    </form>
+    <p class="small muted">Test accounts for this pilot are listed in <span class="mono">secrets/test-accounts.json</span> on the shop server.
+      All balances are simulated IF Credits with no cash value.</p>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · No real money, banking or payouts.</p>
+  </main>
+</body>
+</html>
