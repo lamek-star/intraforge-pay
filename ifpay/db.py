@@ -1,18 +1,30 @@
-"""PostgreSQL access: a connection pool, a tiny forward-only migration runner, and error translation."""
+"""PostgreSQL access: a connection pool on the IntraForge-provisioned schema, and a tiny forward-only migration runner."""
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
+_IDENT = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 _pool: ConnectionPool | None = None
+
+
+def conninfo_for(*, host: str, port: int, dbname: str, role: str, password: str, schema: str) -> str:
+    """The connection to the schema IntraForge provisioned for this Pay instance, as its own least-privilege role.
+    Every unqualified name (tables, functions, the migration log) resolves inside that schema only."""
+    if not _IDENT.match(schema) or not _IDENT.match(role):
+        raise ValueError("IntraForge returned an invalid schema or role name.")
+    return make_conninfo(host=host, port=port, dbname=dbname, user=role, password=password,
+                         options=f"-c search_path={schema}", connect_timeout=10)
 
 
 def open_pool(database_url: str, *, max_size: int = 10) -> ConnectionPool:
@@ -30,6 +42,10 @@ def open_pool(database_url: str, *, max_size: int = 10) -> ConnectionPool:
     return _pool
 
 
+def is_open() -> bool:
+    return _pool is not None
+
+
 def close_pool() -> None:
     global _pool
     if _pool is not None:
@@ -41,7 +57,9 @@ def close_pool() -> None:
 def connection() -> Iterator[psycopg.Connection]:
     """A pooled connection; the block runs in one transaction, committed on success and rolled back on error."""
     if _pool is None:
-        raise RuntimeError("database pool is not open")
+        from .errors import DomainError
+
+        raise DomainError("not_ready", "IntraForge Pay is starting, or is not installed in a shop yet.", status=503)
     with _pool.connection() as conn:
         yield conn
 

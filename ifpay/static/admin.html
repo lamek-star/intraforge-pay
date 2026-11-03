@@ -4,25 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IntraForge Pay Admin</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/common.js" defer></script>
-  <script src="/static/admin.js" defer></script>
+  <link rel="stylesheet" href="static/app.css">
+  <script src="static/common.js" defer></script>
+  <script src="static/admin.js" defer></script>
 </head>
 <body>
   <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
   <header class="top">
-    <span class="brand">IntraForge Pay · Pilot administration</span>
+    <span class="brand">IntraForge Pay · Shop office</span>
     <span class="who"><span id="who"></span><button id="logout" class="ghost-light">Sign out</button></span>
   </header>
   <main>
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
-      <button role="tab" data-tab="credits">Credits (maker/checker)</button>
-      <button role="tab" data-tab="customers" data-cap="users">Customers</button>
-      <button role="tab" data-tab="transactions">Transactions</button>
-      <button role="tab" data-tab="audit">Audit log</button>
+      <button role="tab" data-tab="credits" data-cap="allocations.request allocations.decide">Credits (maker/checker)</button>
+      <button role="tab" data-tab="customers" data-cap="users.manage">Customers</button>
+      <button role="tab" data-tab="transactions" data-cap="audit.read">Transactions</button>
+      <button role="tab" data-tab="audit" data-cap="audit.read">Audit log</button>
       <button role="tab" data-tab="integration">IntraForge connection</button>
-      <button role="tab" data-tab="users" data-cap="users">Users</button>
+      <button role="tab" data-tab="users" data-cap="users.manage">People</button>
     </nav>
     <div id="page-msg" class="msg hidden" role="alert"></div>
 
@@ -58,10 +58,10 @@
 
     <section data-panel="customers" class="hidden">
       <div class="card">
-        <h2>Create a test customer</h2>
+        <h2>Create a customer wallet</h2>
         <form id="cust-form" class="row">
           <div><label for="cust-username">Username</label><input id="cust-username" required pattern="[a-z0-9._\-]{3,40}" autocapitalize="none"></div>
-          <div><label for="cust-name">Display name</label><input id="cust-name" required maxlength="80"></div>
+          <div><label for="cust-name">Display name</label><input id="cust-name" required maxlength="200"></div>
           <div><label for="cust-password">Password (10+ characters)</label><input id="cust-password" type="password" minlength="10" required autocomplete="new-password"></div>
           <button type="submit" class="mt">Create</button>
         </form>
@@ -93,27 +93,26 @@
 
     <section data-panel="integration" class="hidden">
       <div class="card">
-        <h2>Status</h2>
-        <p>Connection: <span id="if-status" class="badge">–</span> <span class="small muted" id="if-checked"></span></p>
+        <h2>IntraForge</h2>
+        <p>This Pay: <span id="if-status" class="badge">–</span> <span class="small muted" id="if-checked"></span></p>
         <p class="small" id="if-detail"></p>
-        <p class="small">Credential file on this server: <span id="if-cred" class="badge">–</span></p>
-        <button id="if-verify" type="button" data-cap="integration">Verify with IntraForge now</button>
+        <button id="if-verify" type="button" class="secondary">Check with IntraForge now</button>
       </div>
-      <div class="card" data-cap="integration">
-        <h2>Configuration wizard (non-secret)</h2>
-        <p class="small muted">Load <span class="mono">config/intraforge.json</span> written by
-          <span class="mono">scripts/intraforge_admin_setup.py</span>, or edit the fields. The application credential is
-          <strong>never</strong> entered here: it stays in <span class="mono">secrets/intraforge_credential</span> on the shop server.</p>
-        <label for="if-file">Configuration file</label>
-        <input id="if-file" type="file" accept="application/json,.json">
-        <label for="if-json">Configuration (JSON)</label>
-        <textarea id="if-json" spellcheck="false"></textarea>
-        <button id="if-save" type="button" class="mt">Save and verify</button>
+      <div class="card">
+        <h2>Who may do what</h2>
+        <p class="small">Shop staff sign in with their own IntraForge account and open IntraForge Pay from IntraForge's
+          <strong>Apps</strong> page. What each person may do is set in IntraForge, by the shop owner, under the
+          organization's <strong>Members</strong>: give a member the role <strong>Pay Cashier</strong> (counter: payment
+          QR codes and the shop's receipts), <strong>Pay Supervisor</strong> (customer wallets, credit requests and
+          approvals, history) or <strong>Pay Manager</strong> (all of it). The owner (Organization Administrator) holds
+          everything. A change takes effect on the person's next click.</p>
+        <p class="small">Receipts are stored in this Pay's own files in IntraForge, and Pay's history is copied into
+          IntraForge's audit log.</p>
       </div>
     </section>
 
     <section data-panel="users" class="hidden">
-      <div class="card"><h2>All pilot users</h2><div class="table-wrap"><table>
+      <div class="card"><h2>People known to this Pay</h2><p class="small muted">Shop staff appear after they first open Pay; their roles are managed in IntraForge. Customers are this shop's wallet accounts.</p><div class="table-wrap"><table>
         <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
         <tbody id="user-list"></tbody></table></div></div>
     </section>

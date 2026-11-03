@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IF Credits Wallet</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/vendor/jsQR.js" defer></script>
-  <script src="/static/common.js" defer></script>
-  <script src="/static/wallet.js" defer></script>
+  <link rel="stylesheet" href="static/app.css">
+  <script src="static/vendor/jsQR.js" defer></script>
+  <script src="static/common.js" defer></script>
+  <script src="static/wallet.js" defer></script>
 </head>
 <body>
   <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
@@ -47,6 +47,7 @@
       <p class="muted small">Paying</p>
       <p><strong id="merchant-name"></strong> <span id="merchant-verified" class="badge"></span></p>
       <div class="confirm-amount" id="confirm-amount"></div>
+      <p class="small hidden" id="confirm-for"></p>
       <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
       <p class="small muted" id="confirm-expiry"></p>
       <div id="confirm-msg" class="msg hidden" role="alert"></div>
@@ -59,7 +60,7 @@
       <ul class="list" id="history"></ul>
       <p class="small muted hidden" id="history-empty">No transactions yet.</p>
     </section>
-    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · Pilot only: no cash, banking, top-ups or payouts.</p>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · No cash, banking, top-ups or payouts.</p>
   </main>
 </body>
 </html>

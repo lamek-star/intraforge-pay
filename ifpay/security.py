@@ -13,21 +13,37 @@ import threading
 import time
 from collections import defaultdict, deque
 
+# Customers are Pay's own wallet accounts. The earlier pilot's own staff roles (admin, supervisor, cashier) hold nothing:
+# shop staff are IntraForge people now (role "staff"), see STAFF_CAPABILITIES.
 CAPABILITIES: dict[str, frozenset[str]] = {
-    "admin": frozenset({
-        "admin.read", "users.manage", "allocations.request", "allocations.decide", "integration.manage",
-        "audit.read", "receipts.read_all", "receipts.upload",
-    }),
-    # The checker in maker/checker; can also request, but never approve their own request.
-    "supervisor": frozenset({"admin.read", "allocations.request", "allocations.decide", "audit.read", "receipts.read_all"}),
-    "cashier": frozenset({"checkout.create", "shop.read", "receipts.read_merchant", "receipts.upload"}),
     "customer": frozenset({"wallet.read", "wallet.pay", "receipts.read_own"}),
 }
+
+# What each IntraForge capability lets a staff member do in Pay. IntraForge decides who holds which (its Pay Cashier,
+# Pay Supervisor and Pay Manager roles, or Organization Administrator) and re-decides it on every request.
+STAFF_CAPABILITIES: dict[str, frozenset[str]] = {
+    "ifpay.checkout": frozenset({"checkout.create", "shop.read", "receipts.read_merchant", "receipts.upload"}),
+    "ifpay.customers.manage": frozenset({"admin.read", "users.manage"}),
+    "ifpay.allocations.request": frozenset({"admin.read", "allocations.request"}),
+    # The checker in maker/checker: can approve, but never their own request (code + database CHECK).
+    "ifpay.allocations.approve": frozenset({"admin.read", "allocations.decide"}),
+    "ifpay.audit.read": frozenset({"admin.read", "audit.read", "receipts.read_all", "receipts.upload"}),
+}
+
+
+def staff_capabilities(intraforge_capabilities) -> frozenset[str]:
+    caps: set[str] = set()
+    for capability in intraforge_capabilities:
+        caps |= STAFF_CAPABILITIES.get(capability, frozenset())
+    return frozenset(caps)
 
 
 def has_capability(user: dict | None, capability: str) -> bool:
     if not user or not user.get("active"):
         return False
+    if user["role"] == "staff":
+        # Attached per request from the live IntraForge session (web/deps.py); a stored row alone grants nothing.
+        return capability in user.get("capabilities", frozenset())
     return capability in CAPABILITIES.get(user["role"], frozenset())
 
 

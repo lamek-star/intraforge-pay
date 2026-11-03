@@ -16,7 +16,7 @@ import uuid
 
 import segno
 
-from .config import signing_key
+from .keys import signing_key
 from .errors import DomainError
 
 PREFIX = "IFPAY1"

@@ -82,7 +82,7 @@ def decide_allocation(conn, *, actor: dict, allocation_id, approve: bool, note: 
 def list_allocations(conn) -> list[dict]:
     return conn.execute(
         """SELECT a.*, c.username AS customer_username, c.display_name AS customer_name,
-                  r.username AS requested_by_username, d.username AS decided_by_username
+                  r.display_name AS requested_by_username, d.display_name AS decided_by_username
            FROM credit_allocations a
            JOIN users c ON c.id = a.customer_id
            JOIN users r ON r.id = a.requested_by

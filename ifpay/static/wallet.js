@@ -1,14 +1,14 @@
 "use strict";
 (async () => {
   const { api, el, show, fmtTime, openReceipt } = IFPay;
-  if (!(await IFPay.requireUser(["customer"]))) return;
+  if (!(await IFPay.requireUser("customer", "wallet.read"))) return;
   const $ = (id) => document.getElementById(id);
   let stream = null;
   let scanning = false;
   let pending = null; // {code, info}
 
   async function refresh() {
-    const w = await api("GET", "/api/wallet");
+    const w = await api("GET", "api/wallet");
     $("customer-name").textContent = w.customer;
     $("balance").replaceChildren(w.balance, el("small", {}, " IF Credits"));
     $("history").replaceChildren(...w.history.map((h) => el("li", {},
@@ -83,7 +83,7 @@
   async function resolveCode(code) {
     show("scan-msg", "");
     try {
-      const info = await api("POST", "/api/wallet/checkout/resolve", { code: code.trim() });
+      const info = await api("POST", "api/wallet/checkout/resolve", { code: code.trim() });
       pending = { code: code.trim(), info };
       $("scan-card").classList.add("hidden");
       $("merchant-name").textContent = info.merchant.name;
@@ -91,6 +91,10 @@
       v.textContent = info.merchant.verified ? "✓ Verified by IntraForge" : "Not verified";
       v.className = `badge ${info.merchant.verified ? "ok" : "bad"}`;
       $("confirm-amount").textContent = `${info.amount} IF Credits`;
+      // What the payment is for, when another application in the shop asked for it (e.g. a Spare Parts invoice).
+      const forLine = $("confirm-for");
+      forLine.textContent = info.reference ? `For: ${info.reference}${info.requested_by_app ? ` (${info.requested_by_app})` : ""}` : "";
+      forLine.classList.toggle("hidden", !info.reference);
       $("confirm-expiry").textContent = info.status === "pending" ? `This request expires at ${new Date(info.expires_at).toLocaleTimeString()}.` : "";
       $("pay-btn").textContent = `Confirm and pay ${info.amount}`;
       const payable = info.status === "pending" && info.merchant.verified;
@@ -109,7 +113,7 @@
     if (!pending) return;
     $("pay-btn").disabled = true;
     try {
-      const r = await api("POST", "/api/wallet/checkout/pay",
+      const r = await api("POST", "api/wallet/checkout/pay",
         { code: pending.code, expected_amount_minor: pending.info.amount_minor, confirm: true });
       show("confirm-msg", r.status === "paid" ? `Paid. New balance: ${r.balance} IF Credits.` : "Already paid — showing your receipt.", "ok");
       pending = null;
