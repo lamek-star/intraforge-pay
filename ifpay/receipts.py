@@ -23,7 +23,7 @@ def canonical_json(body: dict) -> bytes:
 
 
 def issue_receipt(conn, *, payment_request: dict, transaction: dict, customer: dict, merchant: dict,
-                  entries: list[dict]) -> dict:
+                  entries: list[dict], cashback: dict | None = None) -> dict:
     seq = conn.execute("SELECT nextval('receipt_number_seq') AS n").fetchone()["n"]
     issued_at = transaction["created_at"].astimezone(timezone.utc)
     number = f"IFP-{issued_at:%Y%m%d}-{seq:06d}"
@@ -43,6 +43,13 @@ def issue_receipt(conn, *, payment_request: dict, transaction: dict, customer: d
             {"account": e["code"], "side": e["side"], "amount": format_amount(e["amount_minor"])} for e in entries
         ],
     }
+    if cashback:
+        body["cashback"] = {
+            "amount": format_amount(cashback["amount_minor"]),
+            "amount_minor": cashback["amount_minor"],
+            "rate_percent": f"{cashback['rate_bp'] / 100:.2f}",
+            "journal_transaction_id": str(cashback["journal_transaction_id"]),
+        }
     digest = hashlib.sha256(canonical_json(body)).hexdigest()
     return conn.execute(
         """INSERT INTO receipts (receipt_number, journal_transaction_id, payment_request_id, customer_id, merchant_id,

@@ -11,6 +11,9 @@
     const w = await api("GET", "api/wallet");
     $("customer-name").textContent = w.customer;
     $("balance").replaceChildren(w.balance, el("small", {}, " IF Credits"));
+    $("cashback-line").textContent = w.cashback_rate.active
+      ? `${w.cashback_rate.rate_percent} % cashback on every payment · ${w.cashback_earned} earned so far`
+      : (w.cashback_earned !== "0.00" ? `${w.cashback_earned} cashback earned so far` : "");
     $("history").replaceChildren(...w.history.map((h) => el("li", {},
       el("div", { class: "grow" }, el("div", {}, h.description), el("div", { class: "small muted" }, fmtTime(h.at))),
       el("span", { class: `amount ${h.amount.startsWith("-") ? "neg" : "pos"}` }, h.amount),

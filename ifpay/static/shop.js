@@ -25,6 +25,17 @@
     $("today-empty").classList.toggle("hidden", s.today.length > 0);
   }
 
+  async function loadRefunds() {
+    const rows = await api("GET", "api/shop/refunds");
+    const tone = { approved: "ok", rejected: "bad", pending: "warn" };
+    $("refund-list").replaceChildren(...rows.slice(0, 20).map((r) => el("li", {},
+      el("div", { class: "grow" },
+        el("div", {}, el("strong", {}, r.receipt_number), " · ", r.customer),
+        el("div", { class: "small muted" }, fmtTime(r.requested_at), " · ", r.reason,
+          r.status === "approved" ? ` · ${r.returned_to_wallet} returned` : "")),
+      el("span", { class: "amount" }, r.amount), el("span", { class: `badge ${tone[r.status]}` }, r.status))));
+  }
+
   function viewReceipt(number) {
     openReceipt(number, { onUpload: uploadReceipt, onAttach: attachDocument }).catch((e) => show("shop-msg", e.message, "bad"));
   }
@@ -92,6 +103,18 @@
       $("generate").disabled = false;
     }
   });
+
+  $("refund-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("POST", "api/shop/refunds", { receipt_number: $("refund-receipt").value.trim(),
+        amount: $("refund-amount").value.trim(), reason: $("refund-reason").value.trim() });
+      event.target.reset();
+      show("refund-msg", "Refund requested. A supervisor must approve it before any credits move.", "ok");
+      loadRefunds();
+    } catch (e) { show("refund-msg", e.message, "bad"); }
+  });
+  loadRefunds().catch(() => {});
 
   $("cancel-qr").addEventListener("click", async () => {
     try { setStatus(await api("POST", `api/shop/payment-requests/${current.id}/cancel`)); } catch (e) { show("shop-msg", e.message, "bad"); }

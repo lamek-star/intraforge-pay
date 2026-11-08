@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 
-from .. import audit, checkout, db, ledger, receipts
+from .. import audit, checkout, db, ledger, receipts, rewards
 from ..config import SIMULATED_NOTICE
 from ..errors import DomainError
 from ..money import format_amount
@@ -13,6 +13,13 @@ from .api_shop import receipt_payload, upload_receipt_in_background
 from .deps import current_principal, require
 
 router = APIRouter(prefix="/api")
+
+_DESCRIPTIONS = {
+    "purchase": "Purchase at {merchant}",
+    "cashback": "Cashback",
+    "refund": "Refund",
+    "allocation": "Simulated credit allocation (approved)",
+}
 
 
 class CodeBody(BaseModel):
@@ -41,16 +48,20 @@ def wallet(user: dict = Depends(require("wallet.read"))):
                ORDER BY t.seq DESC LIMIT 100""",
             (account["id"],),
         ).fetchall()
+        cashback_earned = rewards.earned_total(conn, user["id"])
+        rate = rewards.describe_rate(rewards.current(conn))
     return {
         "notice": SIMULATED_NOTICE,
         "customer": user["display_name"],
         "balance": format_amount(balance),
         "balance_minor": balance,
+        "cashback_earned": format_amount(max(cashback_earned, 0)),
+        "cashback_rate": rate,
         "history": [
             {
                 "kind": h["kind"],
-                "description": (f"Purchase at {h['merchant_name']}" if h["kind"] == "purchase"
-                                else "Simulated credit allocation (approved)"),
+                "description": _DESCRIPTIONS.get(h["kind"], "Simulated credit allocation (approved)").format(
+                    merchant=h["merchant_name"] or "the shop"),
                 "amount": ("-" if h["side"] == "debit" else "+") + format_amount(h["amount_minor"]),
                 "at": h["created_at"].isoformat(),
                 "receipt_number": h["receipt_number"],

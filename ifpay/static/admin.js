@@ -46,6 +46,36 @@
           el("button", { class: "secondary", onclick: () => decide(a.id, "reject") }, "Reject"))
           : a.status === "pending" ? el("span", { class: "small muted" }, "awaiting another checker") : ""))));
     },
+    async cashback() {
+      const c = await api("GET", "api/admin/cashback");
+      $("cb-rate").textContent = c.current.active ? `${c.current.rate_percent} %` : "Off";
+      $("cb-detail").textContent = c.current.active
+        ? `Up to ${c.current.daily_cap} per customer per day. Approved ${fmtTime(c.current.approved_at)}.` : "No approved rate: payments earn no cashback.";
+      $("cb-list").replaceChildren(...c.changes.map((x) => el("tr", {},
+        el("td", { class: "num" }, `${x.rate_percent} %`, el("div", { class: "small muted" }, x.reason)),
+        el("td", { class: "num" }, x.daily_cap),
+        el("td", {}, badge(x.status, { approved: "ok", rejected: "bad", pending: "warn" }[x.status])),
+        el("td", { class: "hide-sm small" }, `${x.requested_by} → ${x.decided_by || "…"}`),
+        el("td", {}, x.can_decide ? el("div", { class: "row" },
+          el("button", { onclick: () => decideOn("cashback", x.id, "approve") }, "Approve"),
+          el("button", { class: "secondary", onclick: () => decideOn("cashback", x.id, "reject") }, "Reject"))
+          : x.status === "pending" ? el("span", { class: "small muted" }, "awaiting a supervisor") : ""))));
+    },
+    async refunds() {
+      const rows = await api("GET", "api/admin/refunds");
+      $("rf-list").replaceChildren(...rows.map((r) => el("tr", {},
+        el("td", {}, el("button", { class: "link", onclick: () => openReceipt(r.receipt_number).catch(err) }, r.receipt_number),
+          el("div", { class: "small muted" }, `${r.customer} · ${r.reason}`)),
+        el("td", { class: "num" }, r.amount, el("div", { class: "small muted" }, `of ${r.payment_amount}`),
+          r.status === "approved" && r.cashback_taken_back !== "0.00"
+            ? el("div", { class: "small muted" }, `cashback ${r.cashback_taken_back} taken back`) : ""),
+        el("td", {}, badge(r.status, { approved: "ok", rejected: "bad", pending: "warn" }[r.status])),
+        el("td", { class: "hide-sm small" }, `${r.requested_by} → ${r.decided_by || "…"}`),
+        el("td", {}, r.can_decide ? el("div", { class: "row" },
+          el("button", { onclick: () => decideOn("refunds", r.id, "approve") }, "Approve"),
+          el("button", { class: "secondary", onclick: () => decideOn("refunds", r.id, "reject") }, "Reject"))
+          : r.status === "pending" ? el("span", { class: "small muted" }, "awaiting another person") : ""))));
+    },
     async customers() {
       const customers = await api("GET", "api/admin/customers");
       $("cust-list").replaceChildren(...customers.map((c) => el("tr", {},
@@ -97,6 +127,17 @@
     } catch (e) { err(e); }
   }
 
+  async function decideOn(kind, id, verb) {
+    try {
+      const r = await api("POST", `api/admin/${kind}/${id}/${verb}`, { note: "" });
+      const done = kind === "cashback"
+        ? (verb === "approve" ? "Approved: the new cashback rate applies to the next payment." : "Rejected: the rate is unchanged.")
+        : (verb === "approve" ? `Approved: ${r.returned_to_wallet} returned to the customer's wallet${r.cashback_taken_back !== "0.00" ? ` (cashback ${r.cashback_taken_back} taken back)` : ""}.` : "Rejected: nothing moved.");
+      show("page-msg", done, "ok");
+      loaders[kind]();
+    } catch (e) { err(e); }
+  }
+
   async function deactivate(user) {
     if (!window.confirm(`Deactivate the wallet of ${user.username}? They are signed out immediately.`)) return;
     try { await api("POST", `api/admin/users/${user.id}/deactivate`); loaders.users(); } catch (e) { err(e); }
@@ -125,6 +166,14 @@
       event.target.reset();
       show("page-msg", "Customer created with an empty wallet. Allocate credits under Credits.", "ok");
       loaders.customers();
+    } catch (e) { err(e); }
+  });
+  $("cb-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("POST", "api/admin/cashback", { rate_percent: $("cb-percent").value, daily_cap: $("cb-cap").value, reason: $("cb-reason").value });
+      show("page-msg", "Proposed. A supervisor (another person) must approve it before it applies.", "ok");
+      loaders.cashback();
     } catch (e) { err(e); }
   });
   $("audit-filter").addEventListener("change", () => loaders.audit().catch(err));
