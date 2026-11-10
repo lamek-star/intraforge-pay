@@ -5,10 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 
-from .. import audit, checkout, db, ledger, receipts, rewards
+from .. import audit, checkout, db, directory, ledger, receipts, rewards
 from ..config import SIMULATED_NOTICE
 from ..errors import DomainError
 from ..money import format_amount
+from ..security import hash_token
 from .api_shop import receipt_payload, upload_receipt_in_background
 from .deps import current_principal, require
 
@@ -30,6 +31,25 @@ class PayBody(BaseModel):
     code: str = Field(max_length=200)
     expected_amount_minor: int
     confirm: bool
+
+
+class PasswordBody(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(max_length=200)
+
+
+@router.post("/wallet/password")
+def change_password(body: PasswordBody, request: Request):
+    """The customer chooses their own password (required first when the shop gave them a one-time password)."""
+    principal = current_principal(request, realm="customer")
+    with db.connection() as conn:
+        user = directory.change_own_password(conn, user=principal.user, current_password=body.current_password,
+                                             new_password=body.new_password)
+        # Other devices signed in with the old password are signed out; this one stays signed in.
+        conn.execute("""UPDATE sessions SET revoked_at = now()
+                        WHERE user_id = %s AND revoked_at IS NULL AND token_hash <> %s""",
+                     (user["id"], hash_token(principal.token)))
+    return {"user": directory.public_user(user)}
 
 
 @router.get("/wallet")

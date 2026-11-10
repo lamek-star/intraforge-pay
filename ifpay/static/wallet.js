@@ -1,8 +1,26 @@
 "use strict";
 (async () => {
   const { api, el, show, fmtTime, openReceipt } = IFPay;
-  if (!(await IFPay.requireUser("customer", "wallet.read"))) return;
+  const me = await IFPay.requireUser("customer", "wallet.read");
+  if (!me) return;
   const $ = (id) => document.getElementById(id);
+
+  // A one-time password from the shop: the customer chooses their own before anything else.
+  if (me.must_change_password) {
+    ["balance-card", "history-card"].forEach((id) => $(id).classList.add("hidden"));
+    $("password-card").classList.remove("hidden");
+    $("password-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if ($("pw-new").value !== $("pw-repeat").value) { show("pw-msg", "The two new passwords are different.", "bad"); return; }
+      try {
+        await api("POST", "api/wallet/password", { current_password: $("pw-current").value, new_password: $("pw-new").value });
+        location.reload();
+      } catch (e) {
+        show("pw-msg", e.message, "bad");
+      }
+    });
+    return;
+  }
   let stream = null;
   let scanning = false;
   let pending = null; // {code, info}

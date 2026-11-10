@@ -5,6 +5,10 @@ IntraForge hold -- and IntraForge's proxy refuses /apps/<slot>/internal/ from ou
 a browser at all. IntraForge has already decided that the application is in the same organization and that the person
 holds ifpay.checkout in this shop; Pay checks the capability again and records the person as the request's creator.
 
+It also opens customer wallets for another application (IntraForge ADR-0022: the Movie Shop's owner approves a portal
+customer and adds them to IF Pay). The approving person must hold ifpay.customers.manage; the wallet remembers the
+application and record it was opened for, and only that application can look it up again.
+
 A request made this way is an ordinary payment request: the customer scans it, sees the shop, the amount and what it is
 for, and confirms in their own wallet. Pay answers a status question only to the application that made the request.
 """
@@ -17,7 +21,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from .. import checkout, db, directory, documents, qr, runtime
+from .. import checkout, db, directory, documents, ledger, qr, runtime
 from ..config import SIMULATED_NOTICE, get_settings
 from ..errors import DomainError, NotFound
 from ..money import format_amount
@@ -93,3 +97,49 @@ def status(request_id: uuid.UUID, source_app_id: uuid.UUID):
             # Unknown, or made by another application: the same answer, so ids cannot be probed.
             raise NotFound("not_found", "No such payment request.")
         return _public(conn, row)
+
+
+class CustomerBody(BaseModel):
+    actor: Person
+    username: str = Field(min_length=1, max_length=40)
+    display_name: str = Field(min_length=1, max_length=80)
+    source: Source
+
+
+def _customer(conn, user: dict) -> dict:
+    account = ledger.customer_account(conn, user["id"])
+    return {
+        **directory.public_user(user),
+        "balance_minor": ledger.balance_minor(conn, account["id"]),
+        "wallet_path": get_settings().cookie_path() + "wallet",
+    }
+
+
+@router.post("/customers", dependencies=[Depends(require_intraforge)])
+def create_customer(body: CustomerBody):
+    caps = frozenset(body.actor.capabilities)
+    if "ifpay.customers.manage" not in caps:
+        raise DomainError("forbidden", "This person may not open IntraForge Pay wallets in this shop.", status=403)
+    with db.connection() as conn:
+        merchant = directory.the_merchant(conn)
+        actor = directory.sync_staff(conn, intraforge_user_id=str(body.actor.id),
+                                     display_name=body.actor.display_name or "Staff",
+                                     capabilities=staff_capabilities(caps), merchant=merchant)
+        user, password = directory.create_customer_for_app(
+            conn, actor=actor, username=body.username, display_name=body.display_name,
+            source={"app_id": str(body.source.app_id), "app_name": body.source.app_name.strip(),
+                    "external_id": body.source.external_id})
+        out = _customer(conn, user)
+    # The first password exists only in this answer; Pay keeps its hash.
+    return {**out, "created": password is not None, "first_password": password}
+
+
+@router.get("/customers/{user_id}", dependencies=[Depends(require_intraforge)])
+def customer(user_id: uuid.UUID, source_app_id: uuid.UUID):
+    with db.connection() as conn:
+        user = conn.execute("SELECT * FROM users WHERE id = %s AND source_app_id = %s AND role = 'customer'",
+                            (user_id, source_app_id)).fetchone()
+        if user is None:
+            # Unknown, or opened for another application: the same answer.
+            raise NotFound("not_found", "No such customer.")
+        return _customer(conn, user)
