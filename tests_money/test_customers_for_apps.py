@@ -150,3 +150,28 @@ def test_changing_the_password_needs_the_csrf_token(api):
     r = api.post("/api/wallet/password",
                  json={"current_password": opened["first_password"], "new_password": "Selam-own-password-1"})
     assert r.status_code == 403
+
+
+def test_the_application_can_give_a_forgotten_wallet_a_new_one_time_password(api, shop):
+    opened = open_wallet(api).json()
+    login = api.post("/api/auth/login", json={"username": opened["username"], "password": opened["first_password"]})
+    csrf = {"X-CSRF-Token": login.json()["csrf_token"]}
+    api.post("/api/wallet/password", headers=csrf,
+             json={"current_password": opened["first_password"], "new_password": "Selam-own-password-1"})
+    url = f"/internal/customers/{opened['id']}/reset-password"
+    who = {"actor": person(["ifpay.customers.manage"])}
+    assert api.post(url, params={"source_app_id": APP}, json={"actor": person(["ifpay.checkout"])},
+                    headers={TOKEN_HEADER: SERVICE_TOKEN}).status_code == 403
+    assert api.post(url, params={"source_app_id": str(uuid.uuid4())}, json=who,
+                    headers={TOKEN_HEADER: SERVICE_TOKEN}).status_code == 404
+    assert api.post(f"/internal/customers/{shop.customer['id']}/reset-password", params={"source_app_id": APP},
+                    json=who, headers={TOKEN_HEADER: SERVICE_TOKEN}).status_code == 404
+    r = api.post(url, params={"source_app_id": APP}, json=who, headers={TOKEN_HEADER: SERVICE_TOKEN})
+    assert r.status_code == 200, r.text
+    new = r.json()["first_password"]
+    assert api.get("/api/wallet").status_code == 401  # the old session ended
+    fresh = TestClient(api.app)
+    assert fresh.post("/api/auth/login", json={"username": opened["username"],
+                                               "password": "Selam-own-password-1"}).status_code == 401
+    again = fresh.post("/api/auth/login", json={"username": opened["username"], "password": new})
+    assert again.status_code == 200 and again.json()["user"]["must_change_password"]

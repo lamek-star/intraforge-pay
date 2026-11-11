@@ -121,6 +121,26 @@ def create_customer_for_app(conn, *, actor: dict, username: str, display_name: s
     raise Conflict("username_taken", "No free username close to that name; choose another.")
 
 
+def reset_password_for_app(conn, *, actor: dict, user_id, source_app_id) -> tuple[dict, str]:
+    """A new one-time password for a wallet another application opened (that application's approving person must hold
+    users.manage): the customer forgot theirs. Their sessions end and the wallet asks for their own password again."""
+    if not has_capability(actor, "users.manage"):
+        raise Forbidden("forbidden", "This person may not reset IntraForge Pay wallets in this shop.")
+    user = conn.execute("SELECT * FROM users WHERE id = %s AND source_app_id = %s AND role = 'customer'",
+                        (user_id, str(uuid.UUID(str(source_app_id))))).fetchone()
+    if user is None:
+        raise NotFound("not_found", "No such customer.")
+    password = first_password()
+    user = conn.execute(
+        "UPDATE users SET password_hash = %s, must_change_password = true WHERE id = %s RETURNING *",
+        (hash_password(password), user["id"]),
+    ).fetchone()
+    conn.execute("UPDATE sessions SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (user["id"],))
+    audit.record(conn, actor=actor, action="user.password_reset", subject_type="user", subject_id=user["id"],
+                 detail={"source_app_id": str(source_app_id)})
+    return user, password
+
+
 def change_own_password(conn, *, user: dict, current_password: str, new_password: str) -> dict:
     """A customer replaces their password (and so the one-time first password). The old sessions end."""
     if user["role"] != "customer":

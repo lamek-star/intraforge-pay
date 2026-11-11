@@ -143,3 +143,23 @@ def customer(user_id: uuid.UUID, source_app_id: uuid.UUID):
             # Unknown, or opened for another application: the same answer.
             raise NotFound("not_found", "No such customer.")
         return _customer(conn, user)
+
+
+class ActorBody(BaseModel):
+    actor: Person
+
+
+@router.post("/customers/{user_id}/reset-password", dependencies=[Depends(require_intraforge)])
+def reset_customer_password(user_id: uuid.UUID, source_app_id: uuid.UUID, body: ActorBody):
+    caps = frozenset(body.actor.capabilities)
+    if "ifpay.customers.manage" not in caps:
+        raise DomainError("forbidden", "This person may not reset IntraForge Pay wallets in this shop.", status=403)
+    with db.connection() as conn:
+        merchant = directory.the_merchant(conn)
+        actor = directory.sync_staff(conn, intraforge_user_id=str(body.actor.id),
+                                     display_name=body.actor.display_name or "Staff",
+                                     capabilities=staff_capabilities(caps), merchant=merchant)
+        user, password = directory.reset_password_for_app(conn, actor=actor, user_id=user_id,
+                                                          source_app_id=source_app_id)
+    # The new one-time password exists only in this answer.
+    return {"username": user["username"], "first_password": password}
