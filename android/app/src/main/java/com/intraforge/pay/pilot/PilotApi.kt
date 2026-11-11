@@ -18,14 +18,15 @@ import javax.net.ssl.SSLSocketFactory
  * The shop server's customer API (the same endpoints the web wallet uses).
  *
  * Pure Kotlin/JVM, no Android classes, so it is tested against the real server on the JVM (app/src/test).
- * HTTPS only, and only to the shop this phone paired with: [pin] is that shop PC's certificate authority
- * (see [PinnedTrustManager]). The session cookie lives in memory only: closing the app signs the customer out.
- * Every state change carries the CSRF token the server issued at sign-in.
+ * HTTPS only, and only to the shop this phone paired with: [pin] is that shop PC's certificate authority, and [ca]
+ * the authority itself when the connect code carried it (see [PinnedTrustManager]). The session cookie lives in
+ * memory only: closing the app signs the customer out. Every state change carries the CSRF token the server issued
+ * at sign-in.
  */
-class PilotApi(serverUrl: String, pin: String, private val connectTimeoutMs: Int = 10_000) {
+class PilotApi(serverUrl: String, pin: String, ca: String? = null, private val connectTimeoutMs: Int = 10_000) {
 
     val baseUrl: String = normalizeServerUrl(serverUrl)
-    private val tls: SSLSocketFactory = PinnedTrustManager.socketFactory(pin)
+    private val tls: SSLSocketFactory = PinnedTrustManager.socketFactory(pin, ca)
     private val cookies = CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
     internal var csrfToken: String? = null  // internal: the JVM tests sign in as the shop to create QR codes
 
@@ -122,6 +123,10 @@ class PilotApi(serverUrl: String, pin: String, private val connectTimeoutMs: Int
         private val RECEIPT_NUMBER = Regex("^IFP-\\d{8}-\\d{6}$")
         val json = Json { ignoreUnknownKeys = true }
 
+        /** Inside IntraForge, Pay lives under an application path on IntraForge's address
+         * (https://192.168.1.10:8443/apps/pay-1); a stand-alone Pay server has none. Only that path shape is accepted. */
+        private val APP_PATH = Regex("^(/apps/[a-z0-9][a-z0-9-]{0,62})?$")
+
         fun normalizeServerUrl(input: String): String {
             val trimmed = input.trim()
             val withScheme = (if ("://" in trimmed) trimmed else "https://$trimmed").trimEnd('/')
@@ -129,7 +134,10 @@ class PilotApi(serverUrl: String, pin: String, private val connectTimeoutMs: Int
             require(uri != null && uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()) {
                 "The shop server address must be https://<address>:<port>"
             }
-            require(uri.rawPath.isNullOrEmpty() && uri.rawQuery == null) { "Enter only the address, e.g. https://192.168.1.20:8643" }
+            require(uri.rawQuery == null && uri.rawFragment == null && uri.rawUserInfo == null &&
+                APP_PATH.matches(uri.rawPath.orEmpty())) {
+                "Enter the shop's address, e.g. https://192.168.1.20:8443/apps/pay-1"
+            }
             return withScheme
         }
 

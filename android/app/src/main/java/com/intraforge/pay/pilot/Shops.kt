@@ -6,6 +6,7 @@ import java.net.URI
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.cert.CertificateException
+import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Base64
 import javax.net.ssl.SSLContext
@@ -19,6 +20,10 @@ import javax.net.ssl.X509TrustManager
  * Every shop PC has its own certificate authority. The connect code carries the shop's name, its HTTPS addresses and
  * the pin (SHA-256 of the public key) of that CA; from then on the app trusts only a server whose certificate chain
  * leads to that exact CA. One app therefore works with any number of shop PCs, each identified by its shop name.
+ *
+ * Version 2 codes (IntraForge Pay inside IntraForge, kit 1.4.0+) also carry the CA certificate itself ([ca], base64
+ * DER): IntraForge's proxy does not send its root in the handshake, so the phone could not check the chain without it.
+ * It is accepted only if its own pin is the code's pin, and the code is scanned in person at the counter.
  */
 @Serializable
 data class ShopProfile(
@@ -27,6 +32,7 @@ data class ShopProfile(
     val urls: List<String>,
     val pin: String,
     @SerialName("last_url") val lastUrl: String? = null,
+    val ca: String? = null,
 ) {
     /** The last address that worked first, then the others in the shop's own order. */
     fun addressesToTry(): List<String> = listOfNotNull(lastUrl) + urls.filter { it != lastUrl }
@@ -45,7 +51,7 @@ data class ShopProfile(
                 ?: throw IllegalArgumentException("The shop connect code is damaged. Scan it again.")
             val payload = runCatching { PilotApi.json.decodeFromString<ConnectPayload>(raw.decodeToString()) }.getOrNull()
                 ?: throw IllegalArgumentException("The shop connect code is damaged. Scan it again.")
-            require(payload.v == 1) { "This shop uses a newer connect code. Update the app." }
+            require(payload.v in 1..2) { "This shop uses a newer connect code. Update the app." }
             val name = payload.name.trim()
             require(name.length in 1..80) { "The shop connect code has no valid shop name." }
             require(PIN.matches(payload.pin)) { "The shop connect code has no valid security pin." }
@@ -53,7 +59,14 @@ data class ShopProfile(
             require(urls.isNotEmpty() && urls.size <= 12) { "The shop connect code has no valid address." }
             runCatching { java.util.UUID.fromString(payload.merchantId) }
                 .getOrElse { throw IllegalArgumentException("The shop connect code is damaged. Scan it again.") }
-            return ShopProfile(name, payload.merchantId, urls, payload.pin)
+            require(payload.v == 1 || payload.ca != null) { "The shop connect code has no security certificate." }
+            if (payload.ca != null) {
+                val ca = runCatching { PinnedTrustManager.decodeCa(payload.ca) }.getOrNull()
+                require(ca != null && ca.basicConstraints >= 0 && PinnedTrustManager.spkiPin(ca) == payload.pin) {
+                    "The shop connect code's security certificate does not match. Scan it again."
+                }
+            }
+            return ShopProfile(name, payload.merchantId, urls, payload.pin, ca = payload.ca)
         }
     }
 }
@@ -65,12 +78,15 @@ private data class ConnectPayload(
     @SerialName("merchant_id") val merchantId: String,
     val urls: List<String>,
     val pin: String,
+    val ca: String? = null,
 )
 
-/** Trusts a server only if the chain it presents contains the pinned shop CA and validates against it. */
-class PinnedTrustManager(private val pin: String) : X509TrustManager {
+/** Trusts a server only if its chain validates against the pinned shop CA: the CA the connect code carried (whose pin
+ * was checked when pairing), or else a CA the server itself presents with that pin. */
+class PinnedTrustManager(private val pin: String, private val ca: X509Certificate? = null) : X509TrustManager {
     override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-        val anchor = chain.firstOrNull { it.basicConstraints >= 0 && spkiPin(it) == pin }
+        val anchor = ca?.takeIf { spkiPin(it) == pin }
+            ?: chain.firstOrNull { it.basicConstraints >= 0 && spkiPin(it) == pin }
             ?: throw CertificateException("This server is not the shop this phone paired with.")
         val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null); setCertificateEntry("shop", anchor) }
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
@@ -87,8 +103,14 @@ class PinnedTrustManager(private val pin: String) : X509TrustManager {
         fun spkiPin(cert: X509Certificate): String =
             "sha256/" + Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(cert.publicKey.encoded))
 
-        fun socketFactory(pin: String): SSLSocketFactory =
-            SSLContext.getInstance("TLS").apply { init(null, arrayOf(PinnedTrustManager(pin)), null) }.socketFactory
+        fun decodeCa(base64Der: String): X509Certificate =
+            CertificateFactory.getInstance("X.509")
+                .generateCertificate(Base64.getDecoder().decode(base64Der).inputStream()) as X509Certificate
+
+        fun socketFactory(pin: String, ca: String? = null): SSLSocketFactory {
+            val manager = PinnedTrustManager(pin, ca?.let(::decodeCa))
+            return SSLContext.getInstance("TLS").apply { init(null, arrayOf(manager), null) }.socketFactory
+        }
     }
 }
 
@@ -97,7 +119,7 @@ object ShopConnector {
     fun connect(shop: ShopProfile): Pair<PilotApi, ShopProfile> {
         var lastNetworkError: PilotApiException? = null
         for (url in shop.addressesToTry()) {
-            val api = PilotApi(url, shop.pin, connectTimeoutMs = 4_000)
+            val api = PilotApi(url, shop.pin, shop.ca, connectTimeoutMs = 4_000)
             try {
                 val identity = api.shopIdentity()
                 if (identity.merchantId != shop.merchantId) {
