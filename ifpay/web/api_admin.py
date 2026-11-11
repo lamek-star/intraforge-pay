@@ -1,4 +1,6 @@
-"""IntraForge administrator / supervisor API: customers, maker/checker credits, ledger, audit, IntraForge connection."""
+"""Supervisor / manager API: customer wallets, maker/checker credits, ledger, audit, and the IntraForge connection.
+
+Who may call what is decided by IntraForge (ifpay.* capabilities of the signed-in member, see security.py)."""
 
 from __future__ import annotations
 
@@ -7,10 +9,8 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from .. import allocations, audit, db, directory, documents, ledger
-from ..config import SIMULATED_NOTICE, get_settings
-from ..errors import DomainError
-from ..intraforge import IntraForgeConfig, load_config, save_config
+from .. import allocations, db, directory, documents, ledger, runtime
+from ..config import SIMULATED_NOTICE
 from ..money import format_amount, parse_amount
 from .deps import require
 
@@ -81,7 +81,8 @@ def create_customer(body: CustomerBody, user: dict = Depends(require("users.mana
 @router.get("/users")
 def users(user: dict = Depends(require("users.manage"))):
     with db.connection() as conn:
-        return [directory.public_user(u) for u in conn.execute("SELECT * FROM users ORDER BY role, username")]
+        return [directory.public_user(u) for u in conn.execute(
+            "SELECT * FROM users WHERE role IN ('staff', 'customer') ORDER BY role, display_name")]
 
 
 @router.post("/users/{user_id}/deactivate")
@@ -137,7 +138,7 @@ def reject(allocation_id: uuid.UUID, body: DecisionBody, user: dict = Depends(re
 def transactions(user: dict = Depends(require("admin.read")), limit: int = Query(100, ge=1, le=500)):
     with db.connection() as conn:
         rows = conn.execute(
-            """SELECT t.id, t.seq, t.kind, t.reference, t.memo, t.created_at, u.username AS created_by,
+            """SELECT t.id, t.seq, t.kind, t.reference, t.memo, t.created_at, u.display_name AS created_by,
                       r.receipt_number,
                       json_agg(json_build_object('account', a.code, 'side', e.side, 'amount_minor', e.amount_minor)
                                ORDER BY e.id) AS entries
@@ -146,7 +147,7 @@ def transactions(user: dict = Depends(require("admin.read")), limit: int = Query
                JOIN journal_entries e ON e.transaction_id = t.id
                JOIN ledger_accounts a ON a.id = e.account_id
                LEFT JOIN receipts r ON r.journal_transaction_id = t.id
-               GROUP BY t.id, u.username, r.receipt_number
+               GROUP BY t.id, u.display_name, r.receipt_number
                ORDER BY t.seq DESC LIMIT %s""",
             (limit,),
         ).fetchall()
@@ -179,30 +180,16 @@ def audit_log(user: dict = Depends(require("audit.read")), limit: int = Query(20
 
 @router.get("/integration")
 def integration(user: dict = Depends(require("admin.read"))):
-    with db.connection() as conn:
-        config = load_config(conn)
+    """Which IntraForge shop this Pay is installed in, and whether IntraForge confirmed it recently."""
+    found = runtime.instance()
     status = documents.current_status()
     return {
-        "config": config.as_dict() if config else None,
-        "credential_file_present": get_settings().intraforge_credential_file.exists(),
+        "instance": runtime.describe(found) if found else None,
         "status": ({"ok": status["ok"], "checked_at": status["checked_at"].isoformat(), "detail": status["detail"]}
                    if status else None),
     }
 
 
-@router.put("/integration")
-def configure_integration(body: dict, user: dict = Depends(require("integration.manage"))):
-    try:
-        config = IntraForgeConfig.validate(body)
-    except ValueError as exc:
-        raise DomainError("invalid_configuration", str(exc)) from exc
-    with db.connection() as conn:
-        save_config(conn, config=config, actor_id=user["id"])
-        audit.record(conn, actor=user, action="intraforge.configure", subject_type="intraforge_application",
-                     subject_id=config.application_id, detail=config.as_dict())
-    return {"config": config.as_dict(), "status": documents.verify_now(actor=user)}
-
-
 @router.post("/integration/verify")
-def verify_integration(user: dict = Depends(require("integration.manage"))):
+def verify_integration(user: dict = Depends(require("admin.read"))):
     return documents.verify_now(actor=user)

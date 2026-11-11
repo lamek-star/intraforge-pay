@@ -84,20 +84,30 @@ def cancel_payment_request(request_id: uuid.UUID, user: dict = Depends(require("
         return checkout.describe(conn, checkout.cancel(conn, actor=user, request_id=request_id))
 
 
+# The signed Android wallet app shipped with Pay (ifpay/static/download/).
+APP_DOWNLOAD = "static/download/IFCreditsWallet.apk"
+
+
 @router.get("/pairing")
 def pairing(user: dict = Depends(require("shop.read"))):
-    """The "connect to this shop" code for the customer app: shop name, this PC's HTTPS addresses, and the pin of
-    this PC's certificate authority. Not secret (it is shown on the shop screen), but it is what the app trusts."""
+    """The "connect to this shop" code for the customer app: shop name and id, IntraForge's HTTPS addresses with
+    Pay's path, and IntraForge's certificate authority with its pin. Not secret (it is shown on the shop screen), but
+    it is what the app trusts."""
     settings = get_settings()
-    if not (settings.tls_dir / "server.crt").exists():
-        raise DomainError("https_not_set_up", "HTTPS is not set up on this shop PC: run scripts/make_tls.py and "
-                                              "start the server with scripts/run_shop_server.ps1.", status=503)
+    urls = tls.shop_urls(settings.public_urls, settings.base_path)
+    if not urls or settings.ca_cert_file is None or not settings.ca_cert_file.is_file():
+        raise DomainError("phones_not_set_up", "Phones are not set up for this shop yet: IntraForge's address for "
+                                               "phones (IFPAY_PUBLIC_URLS) or its certificate authority "
+                                               "(IFPAY_CA_CERT) is missing. See the manual, section 'Phones'.",
+                          status=503)
     with db.connection() as conn:
         merchant = directory.merchant_for_staff(conn, user)
-    code = tls.pairing_code(shop_name=merchant["name"], merchant_id=str(merchant["id"]), tls_dir=settings.tls_dir,
-                            port=settings.public_port)
-    return {"shop": merchant["name"], "code": code, "qr_svg": qr.svg_data_uri(code),
-            "urls": tls.server_urls(settings.tls_dir, settings.public_port, tls.preferred_hosts_from_env())}
+    code = tls.pairing_code(shop_name=merchant["name"], merchant_id=str(merchant["id"]), urls=urls,
+                            ca=tls.load_ca(settings.ca_cert_file))
+    # Step 1 for a customer: install the wallet app from this shop's own IntraForge (the same addresses).
+    app_url = urls[0] + "/" + APP_DOWNLOAD
+    return {"shop": merchant["name"], "code": code, "qr_svg": qr.svg_data_uri(code), "urls": urls,
+            "app_url": app_url, "app_qr_svg": qr.svg_data_uri(app_url)}
 
 
 @router.post("/receipts/{number}/upload")

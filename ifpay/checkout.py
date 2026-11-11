@@ -18,7 +18,10 @@ class PaymentRefused(DomainError):
     """A refusal that is also written to the audit log (in its own transaction, after the rollback)."""
 
 
-def create_payment_request(conn, *, actor: dict, amount_minor: int, merchant_verified: bool, ttl_seconds: int) -> dict:
+def create_payment_request(conn, *, actor: dict, amount_minor: int, merchant_verified: bool, ttl_seconds: int,
+                           reference: str | None = None, source: dict | None = None) -> dict:
+    """`reference` says what the payment is for (shown to the customer); `source` = {app_id, app_name, external_id}
+    names the IntraForge application that asked for it (IntraForge vouches for it), which alone may ask its status."""
     if not has_capability(actor, "checkout.create"):
         raise Forbidden("forbidden", "Only shop staff can create a payment QR.")
     merchant = directory.merchant_for_staff(conn, actor)
@@ -29,13 +32,21 @@ def create_payment_request(conn, *, actor: dict, amount_minor: int, merchant_ver
                           "The shop's IntraForge connection is not verified. Ask the administrator to check it.",
                           status=503)
     now = conn.execute("SELECT now() AS now").fetchone()["now"]
+    source = source or {}
     row = conn.execute(
-        """INSERT INTO payment_requests (merchant_id, amount_minor, created_by, created_at, expires_at, merchant_verified)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING *""",
-        (merchant["id"], amount_minor, actor["id"], now, now + timedelta(seconds=ttl_seconds), merchant_verified),
+        """INSERT INTO payment_requests (merchant_id, amount_minor, created_by, created_at, expires_at, merchant_verified,
+                                         reference, source_app_id, source_app_name, source_external_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (merchant["id"], amount_minor, actor["id"], now, now + timedelta(seconds=ttl_seconds), merchant_verified,
+         reference or None, source.get("app_id"), source.get("app_name"), source.get("external_id")),
     ).fetchone()
+    detail = {"amount": format_amount(amount_minor), "expires_at": row["expires_at"].isoformat()}
+    if reference:
+        detail["reference"] = reference
+    if source:
+        detail["requested_by_app"] = source.get("app_name")
     audit.record(conn, actor=actor, action="checkout.create", subject_type="payment_request", subject_id=row["id"],
-                 detail={"amount": format_amount(amount_minor), "expires_at": row["expires_at"].isoformat()})
+                 detail=detail)
     return row
 
 
@@ -70,6 +81,9 @@ def describe(conn, request: dict) -> dict:
         "created_at": request["created_at"].isoformat(),
         "expires_at": request["expires_at"].isoformat(),
         "receipt_number": receipt["receipt_number"] if receipt else None,
+        "paid_at": request["paid_at"].isoformat() if request["paid_at"] else None,
+        "reference": request["reference"],
+        "requested_by_app": request["source_app_name"],
     }
 
 

@@ -1,4 +1,4 @@
-"""Receipt and supporting-document storage in the authorized IntraForge bucket, and the shop's verification status.
+"""Receipt and supporting-document storage in the shop's own IntraForge bucket, and the shop's verification status.
 
 Nothing here can authorize, block or reverse a payment: a payment is final when its journal transaction commits, and an
 upload that fails afterwards is simply retried later. No database transaction is held open across an HTTP call.
@@ -13,10 +13,10 @@ from collections import defaultdict
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import audit, db, receipts
+from . import audit, db, receipts, runtime
 from .config import get_settings
 from .errors import DomainError, Forbidden
-from .intraforge import IntegrationError, client_from, sha256_hex
+from .platform import IntegrationError, sha256_hex
 from .security import has_capability
 
 ALLOWED_DOCUMENT_TYPES = {
@@ -32,25 +32,9 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
 # --- verification ------------------------------------------------------------------------------------------------------
 
 
-def verify_now(*, actor: dict | None, transport=None) -> dict:
-    """Ask IntraForge whether the credential is valid, is the configured Application, and can reach the bucket."""
-    try:
-        with db.connection() as conn:
-            client = client_from(conn, transport=transport)
-        with client:
-            detail = client.verify()
-        ok, result = True, {"ok": True, **detail}
-    except IntegrationError as exc:
-        ok, result = False, {"ok": False, "code": exc.code, "message": exc.message}
-    with db.connection() as conn:
-        conn.execute(
-            """INSERT INTO integration_status (id, ok, checked_at, detail) VALUES (1, %s, now(), %s)
-               ON CONFLICT (id) DO UPDATE SET ok = EXCLUDED.ok, checked_at = now(), detail = EXCLUDED.detail""",
-            (ok, Jsonb(result)),
-        )
-        audit.record(conn, actor=actor, action="intraforge.verify", result="success" if ok else "error",
-                     subject_type="intraforge_application", detail=result)
-    return result
+def verify_now(*, actor: dict | None) -> dict:
+    """Ask IntraForge whether this Pay instance is still installed and enabled in the shop (``GET self``)."""
+    return runtime.refresh(actor=actor)
 
 
 def current_status() -> dict | None:
@@ -63,12 +47,12 @@ def current_status() -> dict | None:
     return row
 
 
-def merchant_verified(*, actor: dict | None, transport=None) -> bool:
+def merchant_verified(*, actor: dict | None) -> bool:
     """Verified within the last IFPAY_INTRAFORGE_VERIFY_MAX_AGE seconds, re-checking with IntraForge if older."""
     status = current_status()
     if status is not None and status["fresh"]:
         return bool(status["ok"])
-    return bool(verify_now(actor=actor, transport=transport)["ok"])
+    return bool(verify_now(actor=actor)["ok"])
 
 
 # --- uploads -----------------------------------------------------------------------------------------------------------
@@ -79,7 +63,23 @@ def _require_upload(actor: dict) -> None:
         raise Forbidden("forbidden", "You are not allowed to upload documents to IntraForge.")
 
 
-def upload_receipt(*, actor: dict, receipt_number: str, system: bool = False, transport=None) -> dict:
+def _actor_id(actor: dict | None) -> str | None:
+    """The IntraForge person IntraForge records as the uploader; customers and the server itself are recorded as
+    the person who installed Pay."""
+    return str(actor["intraforge_user_id"]) if actor and actor.get("intraforge_user_id") else None
+
+
+def _store(*, actor, filename: str, content: bytes, mime_type: str, kind: str) -> dict:
+    stored = runtime.client().store_file(filename=filename, content=content, mime_type=mime_type, kind=kind,
+                                         actor_id=_actor_id(actor))
+    if stored.get("sha256") and stored["sha256"] != sha256_hex(content):
+        raise IntegrationError("upload_failed", "IntraForge stored different bytes than were sent.")
+    if stored.get("quarantined"):
+        raise IntegrationError("upload_failed", "IntraForge quarantined the file (malware scan).")
+    return stored
+
+
+def upload_receipt(*, actor: dict, receipt_number: str, system: bool = False) -> dict:
     """Idempotent: a receipt already stored in IntraForge is not uploaded again.
 
     `system=True` is the shop server's own automatic upload right after a payment commits (never reachable from a
@@ -98,22 +98,20 @@ def upload_receipt(*, actor: dict, receipt_number: str, system: bool = False, tr
             ).fetchone()
             if existing:
                 return existing
-            client = client_from(conn, transport=transport)
         content = receipts.render_text(receipt)
         filename = f"{receipt['receipt_number']}.txt"
         try:
-            with client:
-                stored = client.upload(filename=filename, content=content, mime_type="text/plain")
+            stored = _store(actor=None if system else actor, filename=filename, content=content,
+                            mime_type="text/plain", kind="RECEIPT")
         except IntegrationError as exc:
             _record_failure(None if system else actor, "intraforge.receipt.upload", receipt_number, exc)
             raise
         return _record_upload(actor=None if system else actor, receipt=receipt, kind="receipt", filename=filename,
-                              mime_type="text/plain", content=content, stored=stored,
-                              bucket_id=client.config.bucket_id)
+                              mime_type="text/plain", content=content, stored=stored)
 
 
-def upload_supporting_document(*, actor: dict, receipt_number: str, filename: str, mime_type: str, content: bytes,
-                               transport=None) -> dict:
+def upload_supporting_document(*, actor: dict, receipt_number: str, filename: str, mime_type: str,
+                               content: bytes) -> dict:
     _require_upload(actor)
     mime_type = (mime_type or "").split(";")[0].strip().lower()
     if mime_type not in ALLOWED_DOCUMENT_TYPES:
@@ -126,21 +124,20 @@ def upload_supporting_document(*, actor: dict, receipt_number: str, filename: st
     base = base or "document"
     with db.connection() as conn:
         receipt = receipts.get_receipt(conn, actor=actor, number=receipt_number)
-        client = client_from(conn, transport=transport)
     stored_name = f"{receipt['receipt_number']}-support-{base}"
     if not stored_name.lower().endswith(ALLOWED_DOCUMENT_TYPES[mime_type]):
         stored_name += ALLOWED_DOCUMENT_TYPES[mime_type]
     try:
-        with client:
-            stored = client.upload(filename=stored_name, content=content, mime_type=mime_type)
+        stored = _store(actor=actor, filename=stored_name, content=content, mime_type=mime_type,
+                        kind="SUPPORTING_DOCUMENT")
     except IntegrationError as exc:
         _record_failure(actor, "intraforge.document.upload", receipt_number, exc)
         raise
     return _record_upload(actor=actor, receipt=receipt, kind="supporting_document", filename=stored_name,
-                          mime_type=mime_type, content=content, stored=stored, bucket_id=client.config.bucket_id)
+                          mime_type=mime_type, content=content, stored=stored)
 
 
-def _record_upload(*, actor, receipt, kind, filename, mime_type, content, stored, bucket_id) -> dict:
+def _record_upload(*, actor, receipt, kind, filename, mime_type, content, stored) -> dict:
     with db.connection() as conn:
         try:
             with conn.transaction():
@@ -149,14 +146,14 @@ def _record_upload(*, actor, receipt, kind, filename, mime_type, content, stored
                                                        intraforge_file_id, bucket_id, uploaded_by)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
                     (receipt["id"], kind, filename, mime_type, len(content), sha256_hex(content), stored["id"],
-                     bucket_id, actor["id"] if actor else None),
+                     None, actor["id"] if actor else None),
                 ).fetchone()
         except psycopg.errors.UniqueViolation:
             return conn.execute("SELECT * FROM intraforge_uploads WHERE receipt_id = %s AND kind = 'receipt'",
                                 (receipt["id"],)).fetchone()
         audit.record(conn, actor=actor, action=f"intraforge.{kind}.upload", subject_type="receipt",
                      subject_id=receipt["receipt_number"],
-                     detail={"intraforge_file_id": str(stored["id"]), "filename": filename, "bucket_id": bucket_id,
+                     detail={"intraforge_file_id": str(stored["id"]), "filename": filename,
                              "sha256": sha256_hex(content)})
     return row
 

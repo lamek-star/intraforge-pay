@@ -12,7 +12,7 @@ def record(conn, *, actor: dict | None, action: str, result: str = "success", su
            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (
             actor["id"] if actor else None,
-            actor["username"] if actor else "",
+            _label(actor),
             action,
             result,
             subject_type,
@@ -20,3 +20,12 @@ def record(conn, *, actor: dict | None, action: str, result: str = "success", su
             Jsonb(detail or {}),
         ),
     )
+
+
+def _label(actor: dict | None) -> str:
+    """Customers by username; IntraForge staff by their IntraForge e-mail (their Pay username is an internal id)."""
+    if not actor:
+        return ""
+    if actor.get("role") == "staff":
+        return str(actor.get("email") or actor.get("display_name") or actor["username"])
+    return actor["username"]

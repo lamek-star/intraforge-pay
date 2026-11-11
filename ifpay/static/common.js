@@ -4,6 +4,7 @@
 const IFPay = (() => {
   let csrf = null;
   let me = null;
+  let staffPage = false;
 
   async function api(method, path, body, extraHeaders) {
     const headers = { Accept: "application/json", ...(extraHeaders || {}) };
@@ -18,8 +19,9 @@ const IFPay = (() => {
     const res = await fetch(path, { method, headers, body: payload, credentials: "same-origin" });
     let data = null;
     try { data = await res.json(); } catch (_) { data = null; }
-    if (res.status === 401 && !path.startsWith("/api/auth/login")) {
-      location.href = "/login";
+    if (res.status === 401 && !path.startsWith("api/auth/login")) {
+      // Shop staff sign in through IntraForge, which opens Pay again for them; customers use Pay's own sign-in.
+      location.href = staffPage && data && data.intraforge_open ? data.intraforge_open : "login";
       throw new Error("Please sign in.");
     }
     if (!res.ok) {
@@ -30,14 +32,36 @@ const IFPay = (() => {
     return data;
   }
 
-  async function requireUser(allowedRoles) {
-    const data = await api("GET", "/api/me");
+  const can = (capability) => !!(me && (me.capabilities || []).includes(capability));
+
+  // realm "staff" (signed in through IntraForge) or "customer" (Pay wallet); `need` is a Pay capability the page
+  // needs (UI convenience only -- the server checks capabilities on every request).
+  async function requireUser(realm, need) {
+    staffPage = realm === "staff";
+    const data = await api("GET", `api/me?realm=${realm}`);
     csrf = data.csrf_token; me = data.user;
-    if (allowedRoles && !allowedRoles.includes(me.role)) { location.href = data.home; return null; }
+    if (need && realm === "staff" && !can(need)) {
+      location.href = data.home === "no-access" ? "login?reason=no-access" : data.home;
+      return null;
+    }
     const who = document.getElementById("who");
-    if (who) who.textContent = `${me.display_name} · ${me.role}`;
+    if (who) who.textContent = realm === "staff" ? `${me.display_name} · ${data.shop || "shop"} (IntraForge)` : `${me.display_name} · customer`;
     const out = document.getElementById("logout");
-    if (out) out.addEventListener("click", async () => { await api("POST", "/api/auth/logout"); location.href = "/login"; });
+    if (out && realm === "staff") {
+      // Counter / office / back to IntraForge, for what this person may do (the server still checks every request).
+      const here = location.pathname.split("/").pop();
+      const links = [["shop", "Counter", "checkout.create"], ["admin", "Office", "admin.read"]]
+        .filter(([page, , cap]) => page !== here && can(cap))
+        .map(([page, label]) => el("a", { class: "ghost-light", href: page }, label));
+      out.before(...links, el("a", { class: "ghost-light", href: "/apps" }, "IntraForge"));
+    }
+    if (out) {
+      if (realm === "staff") out.textContent = "Sign out of IntraForge";
+      out.addEventListener("click", async () => {
+        const r = await api("POST", `api/auth/logout?realm=${realm}`);
+        location.href = r.next || "login";
+      });
+    }
     return me;
   }
 
@@ -77,7 +101,7 @@ const IFPay = (() => {
   }
 
   async function openReceipt(number, opts) {
-    const r = await api("GET", `/api/receipts/${encodeURIComponent(number)}`);
+    const r = await api("GET", `api/receipts/${encodeURIComponent(number)}`);
     const b = r.body;
     const dlg = receiptDialog();
     dlg.replaceChildren();
@@ -112,5 +136,5 @@ const IFPay = (() => {
     if (!dlg.open) dlg.showModal();
   }
 
-  return { api, requireUser, el, show, fmtTime, openReceipt, get me() { return me; } };
+  return { api, requireUser, can, el, show, fmtTime, openReceipt, get me() { return me; } };
 })();

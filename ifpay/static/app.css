@@ -65,6 +65,8 @@ button.secondary { background: transparent; color: var(--text); border-color: va
 button.secondary:hover { background: var(--sunken); }
 button.danger { background: var(--bad); }
 button.ghost-light { background: transparent; color: #fff; border-color: rgba(255,255,255,.4); min-height: 36px; padding: 6px 12px; }
+a.ghost-light { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.4); border-radius: 8px; padding: 6px 10px; margin-left: 6px; display: inline-block; font-size: 14px; }
+a.ghost-light:hover { background: rgba(255,255,255,.12); }
 button.big { width: 100%; font-size: 18px; min-height: 56px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row > * { flex: 1 1 auto; }

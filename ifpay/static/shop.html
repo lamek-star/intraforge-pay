@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pilot Shop Checkout</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/common.js" defer></script>
-  <script src="/static/shop.js" defer></script>
+  <title>IntraForge Pay Counter</title>
+  <link rel="stylesheet" href="static/app.css">
+  <script src="static/common.js" defer></script>
+  <script src="static/shop.js" defer></script>
 </head>
 <body>
   <div class="sim-banner" role="note">SIMULATED VALUE — NO CASH VALUE</div>
@@ -62,10 +62,15 @@
     </section>
     <section class="card" aria-labelledby="app-h">
       <h2 id="app-h">Customer app</h2>
-      <p class="small muted">Customers with the IF Credits Wallet app scan this once to add this shop. The app then shows
-        the shop by name and only trusts this shop PC.</p>
-      <button class="secondary" id="pair-btn" type="button">Show connect QR</button>
+      <p class="small muted">Customers install the IF Credits Wallet app (Android) from this shop, then scan the connect
+        QR once to add the shop. The app then shows the shop by name and only trusts this shop's IntraForge.</p>
+      <p class="small"><a href="static/download/IFCreditsWallet.apk" download>Download the Android app (.apk)</a></p>
+      <button class="secondary" id="pair-btn" type="button">Show the QR codes for a phone</button>
       <div id="pair-box" class="qr-box hidden mt">
+        <p><strong>1. Install the app</strong> -- scan with the phone's camera</p>
+        <img id="app-img" alt="QR to download the customer app">
+        <p class="small"><a id="app-link" href="#" download>Download link</a></p>
+        <p class="mt"><strong>2. Connect the app to this shop</strong> -- scan inside the app</p>
         <img id="pair-img" alt="Connect QR for the customer app">
         <p><strong id="pair-shop"></strong></p>
         <details class="small"><summary>Connect code (to paste instead of scanning)</summary>
@@ -73,7 +78,7 @@
       </div>
       <div id="pair-msg" class="msg hidden" role="alert"></div>
     </section>
-    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · Pilot only: no cash, banking, top-ups or payouts.</p>
+    <p class="footer-note">SIMULATED VALUE — NO CASH VALUE · No cash, banking, top-ups or payouts.</p>
   </main>
   <input type="file" id="doc-input" class="hidden" accept="application/pdf,image/png,image/jpeg,text/plain">
 </body>

@@ -25,7 +25,11 @@ class PilotApiTest {
     @Test fun serverAddressMustBeHttps() {
         assertEquals("https://192.168.1.20:8643", PilotApi.normalizeServerUrl(" 192.168.1.20:8643/ "))
         assertEquals("https://10.0.2.2:8643", PilotApi.normalizeServerUrl("https://10.0.2.2:8643"))
-        for (bad in listOf("http://192.168.1.20:8643", "ftp://x", "https://", "https://x:8643/api", "https://x?a=1")) {
+        // IntraForge Pay: IntraForge's address plus the application's path.
+        assertEquals("https://192.168.1.20:8443/apps/pay-1", PilotApi.normalizeServerUrl("192.168.1.20:8443/apps/pay-1/"))
+        for (bad in listOf("http://192.168.1.20:8643", "ftp://x", "https://", "https://x:8643/api", "https://x?a=1",
+                "https://x:8443/apps/pay-1/api", "https://x:8443/apps/Pay-1", "https://x:8443/apps/../admin",
+                "https://x:8443/apps/pay-1#a", "https://u:p@x:8443/apps/pay-1")) {
             try { PilotApi.normalizeServerUrl(bad); fail("accepted $bad") } catch (_: IllegalArgumentException) { }
         }
     }
@@ -69,7 +73,8 @@ class PilotApiTest {
         val bad = listOf(
             "IFPAY1.not-a-shop-code",
             ShopProfile.PREFIX + "%%%",
-            connectCode("""{"v":2,"name":"X",$base,"pin":"$goodPin"}"""),              // future format
+            connectCode("""{"v":3,"name":"X",$base,"pin":"$goodPin"}"""),              // future format
+            connectCode("""{"v":2,"name":"X",$base,"pin":"$goodPin"}"""),              // v2 without its certificate
             connectCode("""{"v":1,"name":"",$base,"pin":"$goodPin"}"""),               // no name
             connectCode("""{"v":1,"name":"X",$base,"pin":"md5/abc"}"""),               // bad pin
             connectCode("""{"v":1,"name":"X","merchant_id":"$merchant","urls":["http://192.168.1.20:8643"],"pin":"$goodPin"}"""),
