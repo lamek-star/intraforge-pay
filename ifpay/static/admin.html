@@ -18,6 +18,8 @@
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button role="tab" data-tab="credits" data-cap="allocations.request allocations.decide">Credits (maker/checker)</button>
+      <button role="tab" data-tab="cashback" data-cap="allocations.request allocations.decide">Cashback</button>
+      <button role="tab" data-tab="refunds" data-cap="allocations.decide audit.read">Refunds</button>
       <button role="tab" data-tab="customers" data-cap="users.manage">Customers</button>
       <button role="tab" data-tab="transactions" data-cap="audit.read">Transactions</button>
       <button role="tab" data-tab="audit" data-cap="audit.read">Audit log</button>
@@ -54,6 +56,34 @@
       <div class="card"><h2>Allocation requests</h2><div class="table-wrap"><table>
         <thead><tr><th>Customer</th><th class="num">Amount</th><th>Status</th><th class="hide-sm">Maker → checker</th><th></th></tr></thead>
         <tbody id="alloc-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="cashback" class="hidden">
+      <div class="grid">
+        <div class="card"><div class="muted small">Cashback rate in force</div><div class="stat" id="cb-rate">–</div>
+          <div class="small muted" id="cb-detail"></div></div>
+      </div>
+      <div class="card" data-cap="allocations.request">
+        <h2>Propose a new rate</h2>
+        <form id="cb-form" class="row">
+          <div><label for="cb-percent">Cashback (%)</label><input id="cb-percent" value="2" inputmode="decimal" required maxlength="5"></div>
+          <div><label for="cb-cap">Daily cap per customer</label><input id="cb-cap" value="50" inputmode="decimal" required></div>
+          <div><label for="cb-reason">Reason</label><input id="cb-reason" value="Pilot cashback" maxlength="200" required></div>
+          <button type="submit" class="mt">Propose</button>
+        </form>
+        <p class="small muted">0 % to 20 %. A supervisor (a different person) must approve it before it applies. 0 % switches cashback off. Cashback is paid from the shop's own balance into the customer's wallet; a refund takes back its share.</p>
+      </div>
+      <div class="card"><h2>Rate changes</h2><div class="table-wrap"><table>
+        <thead><tr><th class="num">Rate</th><th class="num">Daily cap</th><th>Status</th><th class="hide-sm">Proposed → decided</th><th></th></tr></thead>
+        <tbody id="cb-list"></tbody></table></div></div>
+    </section>
+
+    <section data-panel="refunds" class="hidden">
+      <div class="card"><h2>Refund requests</h2>
+        <p class="small muted">Cashiers request refunds from the counter page. A different person with the approve right decides; only an approval moves credits back to the customer.</p>
+        <div class="table-wrap"><table>
+        <thead><tr><th>Receipt</th><th class="num">Refund</th><th>Status</th><th class="hide-sm">Requested → decided</th><th></th></tr></thead>
+        <tbody id="rf-list"></tbody></table></div></div>
     </section>
 
     <section data-panel="customers" class="hidden">

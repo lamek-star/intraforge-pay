@@ -6,13 +6,15 @@ by staff who hold ifpay.customers.manage. The shop is the IntraForge Pay instanc
 
 from __future__ import annotations
 
+import re
+import secrets
 import uuid
 
 import psycopg
 
 from . import audit, ledger
 from .errors import Conflict, DomainError, Forbidden, NotFound
-from .security import has_capability, hash_password, validate_new_password
+from .security import has_capability, hash_password, validate_new_password, verify_password
 
 ROLES = ("customer",)
 
@@ -58,6 +60,108 @@ def create_user(conn, *, actor: dict | None, username: str, display_name: str, r
     audit.record(conn, actor=actor, action="user.create", subject_type="user", subject_id=user["id"],
                  detail={"username": username, "role": role})
     return user
+
+
+# A first password a person can read out at the counter: no 0/O, 1/l/I.
+_FIRST_PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+_USERNAME_UNSAFE = re.compile(r"[^a-z0-9._-]+")
+
+
+def first_password() -> str:
+    """Twelve characters in three groups ("k7mq-x2vd-9tna"), about 59 bits: used once, then replaced by the
+    customer."""
+    chars = [secrets.choice(_FIRST_PASSWORD_ALPHABET) for _ in range(12)]
+    return "-".join("".join(chars[i:i + 4]) for i in (0, 4, 8))
+
+
+def username_base(wanted: str) -> str:
+    base = _USERNAME_UNSAFE.sub("-", wanted.strip().lower()).strip("-._")[:34]
+    return base if len(base) >= 3 else f"customer-{base}".strip("-")[:34]
+
+
+def create_customer_for_app(conn, *, actor: dict, username: str, display_name: str, source: dict
+                            ) -> tuple[dict, str | None]:
+    """Opens a customer wallet another application in this shop asked for (IntraForge decided the application is in
+    the same shop; `actor` is the person who approved it there). Asking again for the same record returns the wallet
+    already opened and no password. Otherwise Pay picks a free username starting with `username` and returns the
+    one-time first password, which the customer must replace at their first sign-in."""
+    if not has_capability(actor, "users.manage"):
+        raise Forbidden("forbidden", "This person may not open IntraForge Pay wallets in this shop.")
+    app_id, external_id = str(uuid.UUID(str(source["app_id"]))), str(source["external_id"])
+    existing = conn.execute("SELECT * FROM users WHERE source_app_id = %s AND source_external_id = %s",
+                            (app_id, external_id)).fetchone()
+    if existing is not None:
+        return existing, None
+    display_name = display_name.strip()[:80]
+    base = username_base(username)
+    password = first_password()
+    for n in range(1, 50):
+        candidate = base if n == 1 else f"{base}-{n}"
+        try:
+            with conn.transaction():
+                user = conn.execute(
+                    """INSERT INTO users (username, display_name, role, password_hash, created_by, source_app_id,
+                                          source_external_id, must_change_password)
+                       VALUES (%s, %s, 'customer', %s, %s, %s, %s, true) RETURNING *""",
+                    (candidate, display_name, hash_password(password), actor["id"], app_id, external_id),
+                ).fetchone()
+        except psycopg.errors.UniqueViolation:
+            again = conn.execute("SELECT * FROM users WHERE source_app_id = %s AND source_external_id = %s",
+                                 (app_id, external_id)).fetchone()
+            if again is not None:  # the same record, opened by a request that ran at the same time
+                return again, None
+            continue  # the username is taken: try the next number
+        except psycopg.errors.CheckViolation as exc:
+            raise DomainError("invalid_user", "The customer's name must be 1-80 characters.") from exc
+        ledger.open_customer_account(conn, user)
+        audit.record(conn, actor=actor, action="user.create", subject_type="user", subject_id=user["id"],
+                     detail={"username": candidate, "role": "customer", "source_app_id": app_id,
+                             "source_external_id": external_id, "source_app_name": source.get("app_name", "")})
+        return user, password
+    raise Conflict("username_taken", "No free username close to that name; choose another.")
+
+
+def reset_password_for_app(conn, *, actor: dict, user_id, source_app_id) -> tuple[dict, str]:
+    """A new one-time password for a wallet another application opened (that application's approving person must hold
+    users.manage): the customer forgot theirs. Their sessions end and the wallet asks for their own password again."""
+    if not has_capability(actor, "users.manage"):
+        raise Forbidden("forbidden", "This person may not reset IntraForge Pay wallets in this shop.")
+    user = conn.execute("SELECT * FROM users WHERE id = %s AND source_app_id = %s AND role = 'customer'",
+                        (user_id, str(uuid.UUID(str(source_app_id))))).fetchone()
+    if user is None:
+        raise NotFound("not_found", "No such customer.")
+    password = first_password()
+    user = conn.execute(
+        "UPDATE users SET password_hash = %s, must_change_password = true WHERE id = %s RETURNING *",
+        (hash_password(password), user["id"]),
+    ).fetchone()
+    conn.execute("UPDATE sessions SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (user["id"],))
+    audit.record(conn, actor=actor, action="user.password_reset", subject_type="user", subject_id=user["id"],
+                 detail={"source_app_id": str(source_app_id)})
+    return user, password
+
+
+def change_own_password(conn, *, user: dict, current_password: str, new_password: str) -> dict:
+    """A customer replaces their password (and so the one-time first password). The old sessions end."""
+    if user["role"] != "customer":
+        raise DomainError("staff_in_intraforge", "Shop staff sign in through IntraForge.")
+    stored = conn.execute("SELECT password_hash FROM users WHERE id = %s", (user["id"],)).fetchone()["password_hash"]
+    if not verify_password(current_password, stored):
+        audit.record(conn, actor=user, action="user.password_change", result="denied", subject_type="user",
+                     subject_id=user["id"], detail={"reason": "wrong_current_password"})
+        conn.commit()
+        raise DomainError("wrong_password", "The current password is wrong.", status=403)
+    problem = validate_new_password(new_password)
+    if problem:
+        raise DomainError("weak_password", problem)
+    if new_password == current_password:
+        raise DomainError("same_password", "Choose a password different from the current one.")
+    row = conn.execute(
+        "UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s RETURNING *",
+        (hash_password(new_password), user["id"]),
+    ).fetchone()
+    audit.record(conn, actor=user, action="user.password_change", subject_type="user", subject_id=user["id"])
+    return row
 
 
 def deactivate_user(conn, *, actor: dict, user_id) -> dict:
@@ -154,6 +258,8 @@ def public_user(user: dict) -> dict:
         "role": user["role"],
         "active": user["active"],
     }
+    if user["role"] == "customer":
+        out["must_change_password"] = bool(user.get("must_change_password"))
     if "capabilities" in user:
         out["capabilities"] = sorted(user["capabilities"])
     return out

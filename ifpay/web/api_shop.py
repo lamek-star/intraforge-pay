@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 
-from .. import checkout, db, directory, documents, qr, receipts, tls
+from .. import checkout, db, directory, documents, qr, receipts, refunds, tls
 from ..config import SIMULATED_NOTICE, get_settings
 from ..errors import DomainError, NotFound
 from ..money import format_amount, parse_amount
@@ -157,3 +157,28 @@ def receipt_payload(conn, receipt: dict) -> dict:
 
 
 __all__ = ["router", "upload_receipt_in_background", "receipt_payload", "NotFound"]
+
+
+# ---- refunds: the maker's side (a supervisor approves them in the admin page) -----------------------------------------
+
+class RefundBody(BaseModel):
+    receipt_number: str
+    amount: str | int
+    reason: str
+
+
+@router.get("/refunds")
+def shop_refunds(user: dict = Depends(require("shop.read"))):
+    with db.connection() as conn:
+        merchant = directory.merchant_for_staff(conn, user)
+        rows = refunds.list_refunds(conn, merchant["id"])
+    return [refunds.public(r) for r in rows]
+
+
+@router.post("/refunds")
+def request_refund(body: RefundBody, user: dict = Depends(require("checkout.create"))):
+    with db.connection() as conn:
+        merchant = directory.merchant_for_staff(conn, user)
+        row = refunds.request_refund(conn, actor=user, merchant=merchant, receipt_number=body.receipt_number[:40],
+                                     amount_minor=parse_amount(body.amount), reason=body.reason[:200])
+    return {"id": str(row["id"]), "status": row["status"], "amount": format_amount(row["amount_minor"])}

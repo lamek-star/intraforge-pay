@@ -9,7 +9,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from .. import allocations, db, directory, documents, ledger, runtime
+from .. import allocations, db, directory, documents, ledger, refunds, rewards, runtime
 from ..config import SIMULATED_NOTICE
 from ..money import format_amount, parse_amount
 from .deps import require
@@ -193,3 +193,91 @@ def integration(user: dict = Depends(require("admin.read"))):
 @router.post("/integration/verify")
 def verify_integration(user: dict = Depends(require("admin.read"))):
     return documents.verify_now(actor=user)
+
+
+# ---- cashback rate (maker/checker) ------------------------------------------------------------------------------------
+
+class CashbackProposalBody(BaseModel):
+    rate_percent: str = Field(max_length=6)  # "2" or "2.5"
+    daily_cap: str | int
+    reason: str = Field(max_length=200)
+
+
+def _rate_bp(text: str) -> int:
+    """'2.5' -> 250 basis points, exact (no floating point)."""
+    from ..errors import DomainError
+
+    value = text.strip()
+    whole, _, frac = value.partition(".")
+    if not whole.isdigit() or (frac and (not frac.isdigit() or len(frac) > 2)):
+        raise DomainError("invalid_rate", "Enter the rate as a percentage, e.g. 2 or 2.5.")
+    return int(whole) * 100 + int((frac + "00")[:2])
+
+
+@router.get("/cashback")
+def cashback(user: dict = Depends(require("admin.read"))):
+    with db.connection() as conn:
+        rate = rewards.describe_rate(rewards.current(conn))
+        changes = rewards.list_changes(conn)
+    return {
+        "current": rate,
+        "changes": [
+            {
+                "id": str(c["id"]), "rate_percent": f"{c['rate_bp'] / 100:.2f}", "daily_cap": format_amount(c["daily_cap_minor"]),
+                "reason": c["reason"], "status": c["status"], "requested_by": c["requested_by_name"],
+                "requested_at": c["requested_at"].isoformat(), "decided_by": c["decided_by_name"],
+                "decided_at": c["decided_at"].isoformat() if c["decided_at"] else None, "decision_note": c["decision_note"],
+                "can_decide": c["status"] == "pending" and c["requested_by"] != user["id"],
+            }
+            for c in changes
+        ],
+    }
+
+
+@router.post("/cashback")
+def propose_cashback(body: CashbackProposalBody, user: dict = Depends(require("allocations.request"))):
+    with db.connection() as conn:
+        row = rewards.propose(conn, actor=user, rate_bp=_rate_bp(body.rate_percent),
+                              daily_cap_minor=parse_amount(body.daily_cap) if str(body.daily_cap).strip() not in ("0", "0.00") else 0,
+                              reason=body.reason)
+    return {"id": str(row["id"]), "status": row["status"]}
+
+
+@router.post("/cashback/{change_id}/approve")
+def approve_cashback(change_id: uuid.UUID, body: DecisionBody, user: dict = Depends(require("allocations.decide"))):
+    with db.connection() as conn:
+        row = rewards.decide(conn, actor=user, change_id=change_id, approve=True, note=body.note)
+    return {"id": str(row["id"]), "status": row["status"]}
+
+
+@router.post("/cashback/{change_id}/reject")
+def reject_cashback(change_id: uuid.UUID, body: DecisionBody, user: dict = Depends(require("allocations.decide"))):
+    with db.connection() as conn:
+        row = rewards.decide(conn, actor=user, change_id=change_id, approve=False, note=body.note)
+    return {"id": str(row["id"]), "status": row["status"]}
+
+
+# ---- refunds: the checker's side ---------------------------------------------------------------------------------------
+
+@router.get("/refunds")
+def list_refunds_admin(user: dict = Depends(require("admin.read"))):
+    with db.connection() as conn:
+        merchant = directory.the_merchant(conn)
+        rows = refunds.list_refunds(conn, merchant["id"]) if merchant else []
+    return [{**refunds.public(r), "can_decide": r["status"] == "pending" and r["requested_by"] != user["id"]} for r in rows]
+
+
+@router.post("/refunds/{refund_id}/approve")
+def approve_refund(refund_id: uuid.UUID, body: DecisionBody, user: dict = Depends(require("allocations.decide"))):
+    with db.connection() as conn:
+        row = refunds.decide_refund(conn, actor=user, refund_id=refund_id, approve=True, note=body.note)
+    return {"id": str(row["id"]), "status": row["status"],
+            "returned_to_wallet": format_amount(row["amount_minor"] - row["cashback_reversed_minor"]),
+            "cashback_taken_back": format_amount(row["cashback_reversed_minor"])}
+
+
+@router.post("/refunds/{refund_id}/reject")
+def reject_refund(refund_id: uuid.UUID, body: DecisionBody, user: dict = Depends(require("allocations.decide"))):
+    with db.connection() as conn:
+        row = refunds.decide_refund(conn, actor=user, refund_id=refund_id, approve=False, note=body.note)
+    return {"id": str(row["id"]), "status": row["status"]}

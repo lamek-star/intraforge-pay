@@ -60,6 +60,18 @@
       <ul class="list" id="today-list"></ul>
       <p class="small muted hidden" id="today-empty">No transactions yet today.</p>
     </section>
+    <section class="card" aria-labelledby="refund-h">
+      <h2 id="refund-h">Refunds</h2>
+      <form id="refund-form" class="row">
+        <div><label for="refund-receipt">Receipt number</label><input id="refund-receipt" required placeholder="IFP-20261108-000001" maxlength="40" autocomplete="off"></div>
+        <div><label for="refund-amount">Amount to refund</label><input id="refund-amount" required inputmode="decimal" pattern="^\d{1,7}(\.\d{1,2})?$" placeholder="25.00"></div>
+        <div><label for="refund-reason">Reason</label><input id="refund-reason" required maxlength="200" placeholder="Returned item"></div>
+        <button type="submit" class="mt">Request refund</button>
+      </form>
+      <div id="refund-msg" class="msg hidden" role="alert"></div>
+      <p class="small muted">A supervisor (another person) must approve each refund before credits go back to the customer. If the payment earned cashback, the refund takes back its share.</p>
+      <ul class="list" id="refund-list"></ul>
+    </section>
     <section class="card" aria-labelledby="app-h">
       <h2 id="app-h">Customer app</h2>
       <p class="small muted">Customers install the IF Credits Wallet app (Android) from this shop, then scan the connect

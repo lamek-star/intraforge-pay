@@ -16,10 +16,26 @@
     <span class="who"><span id="who"></span><button id="logout" class="ghost-light">Sign out</button></span>
   </header>
   <main class="narrow">
-    <section class="card" aria-labelledby="bal-h">
+    <section class="card hidden" id="password-card" aria-labelledby="pw-h">
+      <h2 id="pw-h">Choose your own password</h2>
+      <p class="small muted">The shop gave you a one-time password. Choose your own before you use the wallet.</p>
+      <form id="password-form">
+        <label for="pw-current">One-time password</label>
+        <input id="pw-current" type="password" autocomplete="current-password" required>
+        <label for="pw-new">New password (at least 10 characters)</label>
+        <input id="pw-new" type="password" autocomplete="new-password" minlength="10" required>
+        <label for="pw-repeat">New password again</label>
+        <input id="pw-repeat" type="password" autocomplete="new-password" minlength="10" required>
+        <div id="pw-msg" class="msg hidden" role="alert"></div>
+        <button class="big mt" type="submit">Save my password</button>
+      </form>
+    </section>
+
+    <section class="card" id="balance-card" aria-labelledby="bal-h">
       <div class="muted small" id="bal-h"><span id="customer-name"></span> · available</div>
       <div class="stat" id="balance">–</div>
       <div class="small muted">IF Credits — simulated value, no cash value</div>
+      <p class="small mt" id="cashback-line"></p>
       <button class="big mt" id="scan-btn" type="button">Scan QR</button>
     </section>
 
@@ -55,7 +71,7 @@
       <button class="secondary mt" id="confirm-cancel" type="button">Don't pay</button>
     </section>
 
-    <section class="card" aria-labelledby="hist-h">
+    <section class="card" id="history-card" aria-labelledby="hist-h">
       <h2 id="hist-h">Transaction history</h2>
       <ul class="list" id="history"></ul>
       <p class="small muted hidden" id="history-empty">No transactions yet.</p>

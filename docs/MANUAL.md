@@ -149,6 +149,18 @@ Balance and history → **Scan QR** (live camera, a photo of the QR, or paste th
 the **shop name, a "Verified by IntraForge" badge and the amount** → **Confirm and pay** → receipt. Nothing is charged
 before the explicit confirmation, and the amount confirmed must equal the request.
 
+### Wallets opened for another application (IntraForge Movie Shop)
+When the owner approves a Movie Shop portal customer in IntraForge (**Add to IF Pay**, IntraForge ADR-0022),
+IntraForge calls `POST /internal/customers` on Pay's internal network with the service token and the approving
+person's capabilities, which must include `ifpay.customers.manage`. Pay opens an ordinary customer wallet (balance 0),
+picks a free username close to the one asked for (`selam`, else `selam-2`, ...) and answers **once** with a one-time
+first password (`k7mq-x2vd-9tna`); it keeps only its hash. The wallet records the application and the record it was
+opened for, so asking again for the same record returns the same wallet and no password, and only that application can
+read it back (`GET /internal/customers/<id>?source_app_id=`: username, balance, the wallet's address). At the first
+sign-in the wallet asks the customer to **choose their own password** and does nothing else until they have; changing
+it signs out their other devices. The Android wallet app shows the same "Choose your own password first" message;
+the customer chooses it once in the web wallet.
+
 ## 5. The pilot demonstration (manual requirement 6)
 
 Run it in the browser as in section 4, or let the script do all twelve steps against the running server and the real

@@ -110,6 +110,9 @@ def require(capability: str):
         for principal in candidates:
             if has_capability(principal.user, capability):
                 _check_csrf(request, principal)
+                if principal.user.get("must_change_password"):
+                    # A one-time password from the shop: nothing else until the customer chooses their own.
+                    raise Forbidden("choose_password", "Choose your own password first.")
                 return principal.user
         with db.connection() as conn:
             audit.record(conn, actor=candidates[0].user, action="access.denied", result="denied",

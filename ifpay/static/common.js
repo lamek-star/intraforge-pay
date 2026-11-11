@@ -117,6 +117,7 @@ const IFPay = (() => {
         el("dt", {}, "Shop"), el("dd", {}, b.merchant.name),
         el("dt", {}, "Customer"), el("dd", {}, b.customer.name),
         el("dt", {}, "Amount"), el("dd", { class: "amount" }, `${b.amount} IF Credits (simulated)`),
+        ...(b.cashback ? [el("dt", {}, "Cashback"), el("dd", { class: "amount pos" }, `+${b.cashback.amount} (${b.cashback.rate_percent} %)`)] : []),
         el("dt", {}, "Issued"), el("dd", {}, `${fmtTime(b.issued_at)} (${b.issued_at} UTC)`),
         el("dt", {}, "Journal ref"), el("dd", { class: "mono" }, b.journal_reference),
         el("dt", {}, "Transaction"), el("dd", { class: "mono" }, b.journal_transaction_id)),

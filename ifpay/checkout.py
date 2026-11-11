@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from . import audit, directory, ledger, qr, receipts
+from . import audit, directory, ledger, qr, receipts, rewards
 from .errors import Conflict, DomainError, Forbidden, NotFound
 from .money import format_amount
 from .security import has_capability
@@ -146,8 +146,10 @@ def pay(conn, *, actor: dict, code: str, expected_amount_minor: int) -> tuple[di
            WHERE e.transaction_id = %s ORDER BY e.id""",
         (tx["id"],),
     ).fetchall()
+    cashback = rewards.award(conn, payment_request=request, customer=actor, merchant_acct=merchant_acct,
+                             customer_acct=customer_acct)
     receipt = receipts.issue_receipt(conn, payment_request=request, transaction=tx, customer=actor, merchant=merchant,
-                                     entries=entries)
+                                     entries=entries, cashback=cashback)
     audit.record(conn, actor=actor, action="payment.confirm", subject_type="journal_transaction", subject_id=tx["id"],
                  detail={"receipt": receipt["receipt_number"], "amount": format_amount(request["amount_minor"]),
                          "merchant": merchant["name"], "payment_request": str(request["id"])})
