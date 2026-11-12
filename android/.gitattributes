@@ -1,0 +1,4 @@
+# gradlew is a shell script: always LF, also in a Windows checkout with core.autocrlf (else ./gradlew fails in
+# Docker, WSL or CI with "No such file or directory"); gradlew.bat stays CRLF.
+gradlew text eol=lf
+*.bat text eol=crlf
