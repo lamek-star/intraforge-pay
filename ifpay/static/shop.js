@@ -5,19 +5,50 @@
   const $ = (id) => document.getElementById(id);
   let current = null;
   let poll = null;
+  const COUNTER_KEY = "ifpay-counter";
+  const zone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { return ""; } })();
+  const myCounter = () => { try { return localStorage.getItem(COUNTER_KEY) || ""; } catch (_) { return ""; } };
+
+  async function loadCounters() {
+    const list = await api("GET", "api/shop/counters?all=true");
+    const active = list.filter((c) => c.active);
+    if (myCounter() && !active.some((c) => c.id === myCounter())) { try { localStorage.removeItem(COUNTER_KEY); } catch (_) {} }
+    $("counter").replaceChildren(el("option", { value: "" }, "No counter"),
+      ...active.map((c) => el("option", { value: c.id }, c.name)));
+    $("counter").value = myCounter();
+    $("counter-row").classList.toggle("hidden", active.length === 0);
+    if (IFPay.can("users.manage")) {
+      $("counters-admin").classList.remove("hidden");
+      $("counters-list").replaceChildren(...list.map((c) => el("li", {},
+        el("span", { class: "grow" }, c.name, c.active ? "" : " (not in use)"),
+        el("button", { class: "secondary", type: "button", onclick: async () => {
+          try { await api("POST", `api/shop/counters/${c.id}/${c.active ? "disable" : "enable"}`); await loadCounters(); await refresh(); }
+          catch (e) { show("counter-msg", e.message, "bad"); }
+        } }, c.active ? "Stop using" : "Use again"))));
+    }
+  }
 
   async function refresh() {
-    const s = await api("GET", "api/shop");
+    const params = new URLSearchParams();
+    if (zone) params.set("tz", zone);
+    if (myCounter()) params.set("counter", myCounter());
+    const s = await api("GET", `api/shop?${params}`);
     $("shop-name").textContent = s.merchant.name;
     document.title = `${s.merchant.name} Checkout`;
     $("total-sales").replaceChildren(s.total_simulated_sales, el("small", {}, " IF Credits"));
-    $("today-total").replaceChildren(s.today_total, el("small", {}, " IF Credits"));
+    $("today-total").replaceChildren(s.counter_total ?? s.today_total, el("small", {}, s.counter_total ? " IF Credits at this counter" : " IF Credits"));
+    const several = s.counters_today.length > 1 || (s.counters_today.length === 1 && s.counters_today[0].counter_id);
+    $("counters-today").classList.toggle("hidden", !several);
+    $("counters-today").replaceChildren(...s.counters_today.map((c) => el("li", {},
+      el("span", { class: "grow" }, c.counter, el("span", { class: "small muted" }, ` · ${c.sales} ${c.sales === 1 ? "sale" : "sales"}`)),
+      el("span", { class: "amount pos" }, c.total))),
+      ...(several ? [el("li", {}, el("strong", { class: "grow" }, "All counters"), el("strong", {}, s.today_total))] : []));
     $("verified-line").textContent = s.intraforge.ok
       ? `Shop verified with IntraForge (checked ${fmtTime(s.intraforge.checked_at)}).`
       : "Shop not yet verified with IntraForge — it is checked when you generate a QR.";
     $("today-list").replaceChildren(...s.today.map((t) => el("li", {},
       el("div", { class: "grow" },
-        el("div", {}, el("strong", {}, t.receipt_number), " · ", t.customer),
+        el("div", {}, el("strong", {}, t.receipt_number), " · ", t.customer, t.counter ? ` · ${t.counter}` : ""),
         el("div", { class: "small muted" }, fmtTime(t.issued_at), " · ",
           t.uploaded ? el("span", { class: "badge ok" }, "stored in IntraForge") : el("span", { class: "badge warn" }, "not stored yet"))),
       el("span", { class: "amount pos" }, `+${t.amount}`),
@@ -85,7 +116,7 @@
     show("shop-msg", "");
     $("generate").disabled = true;
     try {
-      current = await api("POST", "api/shop/payment-requests", { amount: $("amount").value.trim() });
+      current = await api("POST", "api/shop/payment-requests", { amount: $("amount").value.trim(), counter_id: myCounter() || null });
       $("qr-img").src = current.qr_svg;
       $("qr-amount").textContent = `${current.amount} IF Credits`;
       $("qr-code").textContent = current.code;
@@ -102,6 +133,21 @@
     } finally {
       $("generate").disabled = false;
     }
+  });
+
+  $("counter").addEventListener("change", async () => {
+    try { if ($("counter").value) localStorage.setItem(COUNTER_KEY, $("counter").value); else localStorage.removeItem(COUNTER_KEY); } catch (_) {}
+    await refresh();
+  });
+
+  $("counter-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    show("counter-msg", "");
+    try {
+      await api("POST", "api/shop/counters", { name: $("counter-name").value });
+      $("counter-name").value = "";
+      await loadCounters();
+    } catch (e) { show("counter-msg", e.message, "bad"); }
   });
 
   $("refund-form").addEventListener("submit", async (event) => {
@@ -137,6 +183,7 @@
     } catch (e) { show("pair-msg", e.message, "bad"); }
   });
 
+  await loadCounters().catch(() => {});
   await refresh();
   setInterval(() => refresh().catch(() => {}), 15000);
 })();
