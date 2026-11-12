@@ -19,7 +19,7 @@ class PaymentRefused(DomainError):
 
 
 def create_payment_request(conn, *, actor: dict, amount_minor: int, merchant_verified: bool, ttl_seconds: int,
-                           reference: str | None = None, source: dict | None = None) -> dict:
+                           reference: str | None = None, source: dict | None = None, counter_id=None) -> dict:
     """`reference` says what the payment is for (shown to the customer); `source` = {app_id, app_name, external_id}
     names the IntraForge application that asked for it (IntraForge vouches for it), which alone may ask its status."""
     if not has_capability(actor, "checkout.create"):
@@ -31,16 +31,22 @@ def create_payment_request(conn, *, actor: dict, amount_minor: int, merchant_ver
         raise DomainError("merchant_not_verified",
                           "The shop's IntraForge connection is not verified. Ask the administrator to check it.",
                           status=503)
+    from .counters import usable
+
+    counter = usable(conn, merchant["id"], counter_id)
     now = conn.execute("SELECT now() AS now").fetchone()["now"]
     source = source or {}
     row = conn.execute(
         """INSERT INTO payment_requests (merchant_id, amount_minor, created_by, created_at, expires_at, merchant_verified,
-                                         reference, source_app_id, source_app_name, source_external_id)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                                         reference, source_app_id, source_app_name, source_external_id, counter_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (merchant["id"], amount_minor, actor["id"], now, now + timedelta(seconds=ttl_seconds), merchant_verified,
-         reference or None, source.get("app_id"), source.get("app_name"), source.get("external_id")),
+         reference or None, source.get("app_id"), source.get("app_name"), source.get("external_id"),
+         counter["id"] if counter else None),
     ).fetchone()
     detail = {"amount": format_amount(amount_minor), "expires_at": row["expires_at"].isoformat()}
+    if counter:
+        detail["counter"] = counter["name"]
     if reference:
         detail["reference"] = reference
     if source:

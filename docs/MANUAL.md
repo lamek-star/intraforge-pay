@@ -244,7 +244,16 @@ before any exposure beyond the loopback address.
 - The shop is verified at QR creation (at most 60 s old, `IFPAY_INTRAFORGE_VERIFY_MAX_AGE`). A QR issued while
   verified can still be paid if the credential is revoked afterwards; its receipt upload then fails and can be retried
   after rotation — payment authority is deliberately independent of document storage.
-- "Today" uses `IFPAY_TIMEZONE` (default UTC).
+- "Today" uses the browser's own time zone (checked against PostgreSQL's list), else `IFPAY_TIMEZONE`, else UTC.
+
+### More than one counter
+
+The Pay Manager names the shop's counters on the checkout screen (**Simulated sales > Counters > New counter**; a
+counter no longer used is *Stop using*, never deleted, so old sales keep its name). Each cashier chooses their counter
+once in the **Counter** list above the amount; the browser remembers it. Every payment request records its counter
+(the database refuses another shop's counter and never lets it change afterwards), the **Today** figure becomes that
+counter's, and a list shows every counter's total for the day and the shop's total. Requests made by another
+IntraForge application (the Movie Shop, Spare Parts) have no counter and are listed as *No counter*.
 
 ## 9. IntraForge API used (verified against the source and a live 1.2.0 instance)
 

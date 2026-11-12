@@ -17,6 +17,11 @@
   <main class="narrow">
     <section class="card" aria-labelledby="new-sale">
       <h2 id="new-sale">New sale</h2>
+      <div id="counter-row" class="hidden">
+        <label for="counter">Counter</label>
+        <select id="counter"></select>
+        <p class="small muted">Each sale records this counter; this browser remembers it.</p>
+      </div>
       <form id="amount-form">
         <label for="amount">Amount (IF Credits, simulated)</label>
         <input id="amount" inputmode="decimal" autocomplete="off" placeholder="25.00" required pattern="^\d{1,7}(\.\d{1,2})?$">
@@ -53,6 +58,16 @@
         <div><div class="muted small">Total simulated sales (merchant payable)</div><div class="stat" id="total-sales">–</div></div>
         <div><div class="muted small">Today</div><div class="stat" id="today-total">–</div></div>
       </div>
+      <ul class="list mt hidden" id="counters-today" aria-label="Today by counter"></ul>
+      <details class="mt hidden" id="counters-admin">
+        <summary>Counters</summary>
+        <ul class="list" id="counters-list"></ul>
+        <form id="counter-form" class="row mt">
+          <div><label for="counter-name">New counter</label><input id="counter-name" maxlength="40" required placeholder="Counter 2" autocomplete="off"></div>
+          <button type="submit" class="secondary">Add</button>
+        </form>
+        <div id="counter-msg" class="msg hidden" role="alert"></div>
+      </details>
     </section>
 
     <section class="card" aria-labelledby="today-h">
