@@ -338,6 +338,14 @@ APK: `android\app\build\outputs\apk\debug\app-debug.apk` (a copy: `dist\IFCredit
 Install with `adb install -r dist\IFCreditsWallet-0.2.0-pilot.apk` (USB debugging), or copy it to the phone and open it.
 It is a **debug-signed pilot build**, not a store release.
 
+**Pay serves the app to phones from `ifpay/static/download/IFCreditsWallet.apk`** (the shop screen's "Download the
+Android app" link and the install QR). Whenever `android/` changes, build the APK and replace that file in the same
+change, or phones download an app that does not match this Pay. The served file now: built from `70680a3` (the
+`android/` tree is unchanged since, up to `1b53eb7`), sha256 `3409f801486d5a356cd243a9c9b1a927d9f68f365754c0fdd6c9baa6cc1f0d0e`.
+It reads connect codes version 1 and 2; the 1.4.0 build it replaced read only version 1 and told every phone
+"This shop uses a newer connect code. Update the app." It is signed with a different debug key than that build, so a
+phone with the old app installed must uninstall it first ("App not installed" otherwise).
+
 ### 12.4 Use
 
 1. At the shop: open the app → **Scan shop connect QR** (shop screen → *Customer app* → *Show connect QR*).
