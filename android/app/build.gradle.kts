@@ -13,13 +13,29 @@ android {
         applicationId = "com.intraforge.pay.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-pilot"
+        versionCode = 3
+        versionName = "0.3.0-pilot"
+    }
+
+    // The release key never lives in this repository (*.jks is ignored): it is read from the environment of the
+    // build (IFWALLET_KEYSTORE, IFWALLET_KEYSTORE_PASSWORD, IFWALLET_KEY_ALIAS, IFWALLET_KEY_PASSWORD; see
+    // docs/MANUAL.md 12.3). Without them assembleRelease gives an unsigned APK, never one signed with a debug key.
+    val releaseKeystore: String? = System.getenv("IFWALLET_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("IFWALLET_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("IFWALLET_KEY_ALIAS") ?: "ifcredits-wallet"
+                keyPassword = System.getenv("IFWALLET_KEY_PASSWORD") ?: System.getenv("IFWALLET_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

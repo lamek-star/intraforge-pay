@@ -334,17 +334,32 @@ cd android
 .\gradlew.bat assembleDebug testDebugUnitTest   # needs Android SDK 36 and JDK 17 (both on this PC)
 ```
 
-APK: `android\app\build\outputs\apk\debug\app-debug.apk` (a copy: `dist\IFCreditsWallet-0.2.0-pilot.apk`).
-Install with `adb install -r dist\IFCreditsWallet-0.2.0-pilot.apk` (USB debugging), or copy it to the phone and open it.
-It is a **debug-signed pilot build**, not a store release.
+APK: `android\app\build\outputs\apk\debug\app-debug.apk`, a debug build for testing on your own phone
+(`adb install -r ...` with USB debugging, or copy it to the phone and open it).
+
+**The app phones get is a release build signed with the wallet's release key** (since 0.3.0). The key is not in this
+repository and never may be (`*.jks` is ignored): it lives with the vendor, outside every repository, kit and shop PC
+(on the build PC: `C:\Users\your\intraforge\signing`, with a README; certificate SHA-256
+`a8fa4f0c27a6a83ce02a54aa6a2ab9d04a6bf79408ace038e4c9a81c4c8d8215`). Every later update must be signed with the same
+key, or phones refuse it as an update. The build reads it from the environment (`app/build.gradle.kts`):
+
+```sh
+# in a build container with Android SDK 36 and a JDK 17 (the toolchain), the key folder mounted at /sign:
+docker exec --env-file <key folder>/keystore.env -e ANDROID_HOME=/sdk -w /w/android <container> \
+  ./gradlew -Porg.gradle.java.installations.paths=<jdk17> testDebugUnitTest assembleRelease
+```
+
+Without the `IFWALLET_*` variables `assembleRelease` gives an unsigned APK. Check before shipping:
+`apksigner verify --print-certs app-release.apk` must show the certificate above; bump `versionCode` for every
+release.
 
 **Pay serves the app to phones from `ifpay/static/download/IFCreditsWallet.apk`** (the shop screen's "Download the
 Android app" link and the install QR). Whenever `android/` changes, build the APK and replace that file in the same
-change, or phones download an app that does not match this Pay. The served file now: built from `70680a3` (the
-`android/` tree is unchanged since, up to `1b53eb7`), sha256 `3409f801486d5a356cd243a9c9b1a927d9f68f365754c0fdd6c9baa6cc1f0d0e`.
-It reads connect codes version 1 and 2; the 1.4.0 build it replaced read only version 1 and told every phone
-"This shop uses a newer connect code. Update the app." It is signed with a different debug key than that build, so a
-phone with the old app installed must uninstall it first ("App not installed" otherwise).
+change, or phones download an app that does not match this Pay. The served file now: **0.3.0-pilot (versionCode 3),
+release-signed**, sha256 `fe07d625cd93333078547fa81e08e8c0ac39fad13cd4e3859b5db0f62df97ea1`; reads connect codes
+version 1 and 2. Phones with an earlier build (0.2.0, debug-signed: the 1.4.0 one, or the one served from
+`b029942`) must uninstall it once before installing this one ("App not installed" otherwise); from 0.3.0 on, updates
+install over the old app.
 
 ### 12.4 Use
 
